@@ -4,184 +4,48 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kingdom 340</title>
-
-  <style>
-    :root {
-      --primary: #1f3a5f;
-      --accent: #4f7cac;
-      --bg: #f8f9fb;
-      --text: #1c1f26;
-      --muted: #6c757d;
-      --line: #e5e7eb;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .container {
-      max-width: 1000px;
-      margin: auto;
-      padding: 40px 20px 60px;
-    }
-
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 20px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .logo {
-      font-size: 20px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-    }
-
-    .tag {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .hero {
-      padding: 60px 0;
-    }
-
-    .hero h1 {
-      font-size: 40px;
-      margin: 0 0 20px;
-      font-weight: 600;
-    }
-
-    .hero p {
-      font-size: 18px;
-      color: var(--muted);
-      max-width: 600px;
-      line-height: 1.6;
-    }
-
-    .buttons {
-      margin-top: 30px;
-      display: flex;
-      gap: 15px;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      padding: 12px 22px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 15px;
-      transition: 0.2s ease;
-      border: 1px solid var(--primary);
-    }
-
-    .btn-primary {
-      background: var(--primary);
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-
-    .btn-secondary {
-      background: white;
-      color: var(--primary);
-    }
-
-    .btn-secondary:hover {
-      background: #eef2f7;
-    }
-
-    .sections {
-      margin-top: 60px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 30px;
-    }
-
-    .card {
-      background: white;
-      padding: 25px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-    }
-
-    .card h3 {
-      margin-top: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .card p {
-      color: var(--muted);
-      line-height: 1.5;
-      font-size: 14px;
-    }
-
-    footer {
-      margin-top: 80px;
-      padding-top: 20px;
-      border-top: 1px solid var(--line);
-      font-size: 13px;
-      color: var(--muted);
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-    }
-
-    @media (max-width: 600px) {
-      .hero h1 {
-        font-size: 30px;
-      }
-    }
-
-  </style>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
-
 <body>
   <div class="container">
 
-    <header>
-      <div>
-        <div class="logo">Kingdom 340</div>
-        <div class="tag">Hub officiel et neutre du royaume</div>
+    <nav class="navbar">
+      <div class="brand">
+        <div class="title">Kingdom 340</div>
+        <div class="subtitle">Hub officiel et neutre du royaume</div>
       </div>
-    </header>
+
+      <div class="navlinks">
+        <a class="active" href="index.html">Accueil</a>
+        <a href="classements.html">Classements</a>
+        <a href="carte.html">Carte</a>
+        <a href="planification.html">Planification</a>
+        <a href="membres/index.html">Membres</a>
+      </div>
+    </nav>
 
     <section class="hero">
       <h1>Coordination et transparence</h1>
       <p>
         Le site du Royaume 340 centralise les informations essentielles.
-        Une partie publique pour la visibilité et une section privée pour la coordination stratégique.
+        La partie publique sert à la visibilité, la partie privée (à venir) à la coordination stratégique.
       </p>
 
-      <div class="buttons">
-        <a href="#" class="btn btn-primary">Rejoindre le Discord</a>
-        <a href="#" class="btn btn-secondary">Espace membres</a>
+      <div class="actions">
+        <a class="btn primary" href="#" id="discordLink">Rejoindre le Discord</a>
+        <a class="btn secondary" href="membres/index.html">Espace membres</a>
       </div>
     </section>
 
-    <section class="sections">
+    <section class="grid">
       <div class="card">
         <h3>Classements</h3>
-        <p>Top joueurs par événement, cumul, statistiques royaume.</p>
+        <p>Top joueurs par événement, cumul, statistiques royaume (version complète en espace membres).</p>
       </div>
-
       <div class="card">
         <h3>Carte stratégique</h3>
-        <p>Coordonnées, niveaux, filtres et suivi des zones clés.</p>
+        <p>Coordonnées, niveaux, filtres et suivi des zones clés (version complète en espace membres).</p>
       </div>
-
       <div class="card">
         <h3>Planification</h3>
         <p>Organisation des événements, Castle, Bear et coordination inter-alliances.</p>
@@ -194,5 +58,10 @@
     </footer>
 
   </div>
+
+  <script>
+    // Remplace par ton lien d'invitation Discord
+    document.getElementById("discordLink").href = "https://discord.gg/TON_INVIT";
+  </script>
 </body>
 </html>
