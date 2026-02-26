@@ -257,13 +257,11 @@ footer{
 @media (max-width: 520px){
   .statsGrid{grid-template-columns:1fr}
 }
-.navbar{
-  backdrop-filter: blur(6px);
-}
 
 .navbar::after{
   content:"";
   display:block;
+  backdrop-filter: blur(6px)
   position:absolute;
   left:0;
   right:0;
