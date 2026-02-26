@@ -30,6 +30,7 @@ body{
 
 /* Navbar */
 .navbar{
+  position: relative;
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -255,4 +256,32 @@ footer{
 }
 @media (max-width: 520px){
   .statsGrid{grid-template-columns:1fr}
+}
+.navbar{
+  backdrop-filter: blur(6px);
+}
+
+.navbar::after{
+  content:"";
+  display:block;
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  height:1px;
+  background:linear-gradient(to right, transparent, rgba(31,58,95,.25), transparent);
+}
+.hero{
+  animation: fadeInUp .6s ease;
+}
+
+@keyframes fadeInUp{
+  from{
+    opacity:0;
+    transform: translateY(10px);
+  }
+  to{
+    opacity:1;
+    transform: translateY(0);
+  }
 }
