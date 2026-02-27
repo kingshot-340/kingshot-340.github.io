@@ -3,401 +3,195 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Carte • Kingdom 340</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <title>Carte 1200×1200</title>
   <style>
-    .mapWrapper{
-      margin-top:20px;
-      border:1px solid var(--line);
-      border-radius:14px;
-      overflow:hidden;
-      background: linear-gradient(180deg, #eef7f1 0%, #e6f3ec 100%);
-    }
-    #map{
+    body{ margin:0; font-family:system-ui, Arial; background:#f6f8fb; }
+    .wrap{ max-width:1200px; margin:0 auto; padding:18px; }
+    .bar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .chip{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; font-weight:700; }
+    canvas{
       width:100%;
       height:720px;
       display:block;
+      background:#ffffff;
+      border:1px solid #e5e7eb;
+      border-radius:16px;
+      margin-top:14px;
       cursor:grab;
     }
-    .mapControls{
-      display:flex;
-      gap:10px;
-      margin-top:15px;
-      flex-wrap:wrap;
-      align-items:center;
-    }
-    input{
-      padding:10px;
-      border-radius:10px;
-      border:1px solid var(--line);
-      font-weight:700;
-      width:140px;
-    }
-    button{
-      padding:10px 14px;
-      border-radius:10px;
-      border:none;
-      background:var(--primary);
-      color:#fff;
-      font-weight:800;
-      cursor:pointer;
-    }
-    button:hover{ background:var(--accent); }
-    .hint{
-      margin-top:10px;
-      color:var(--muted);
-      font-size:13px;
-    }
-    .status{
-      margin-top:10px;
-      color:var(--muted);
-      font-size:13px;
-    }
-    .tooltip{
-      position:fixed;
-      pointer-events:none;
-      background:rgba(17,24,39,.92);
-      color:#fff;
-      padding:8px 10px;
-      border-radius:10px;
-      font-size:12px;
-      line-height:1.35;
-      transform: translate(12px, 12px);
-      display:none;
-      max-width:260px;
-      z-index:9999;
-    }
+    .hint{ margin-top:10px; color:#6b7280; font-size:13px; }
   </style>
 </head>
 <body>
-  <div class="container">
-
-    <nav class="navbar">
-      <div class="brand">
-        <div class="title">Kingdom 340</div>
-        <div class="subtitle">Carte stratégique</div>
-      </div>
-      <div class="navlinks">
-        <a href="index.html">Accueil</a>
-        <a href="classements.html">Classements</a>
-        <a class="active" href="carte.html">Carte</a>
-        <a href="planification.html">Planification</a>
-        <a href="membres/index.html">Membres</a>
-      </div>
-    </nav>
-
-    <h1 class="pageTitle">Carte 1200×1200</h1>
-    <p class="pageIntro">
-      Référence : Château <strong>597:597</strong> • Tourelles : bas <strong>594:594</strong> • droite <strong>604:594</strong> • haut <strong>604:604</strong> • gauche <strong>594:604</strong>.
-    </p>
-
-    <div class="mapControls">
-      <input type="number" id="gotoX" placeholder="X (0-1199)" min="0" max="1199">
-      <input type="number" id="gotoY" placeholder="Y (0-1199)" min="0" max="1199">
-      <button type="button" id="btnGo">Aller à X:Y</button>
-      <button type="button" id="btnCenter">Centrer 597:597</button>
-      <button type="button" id="btnReset">Réinitialiser</button>
+  <div class="wrap">
+    <div class="bar">
+      <div class="chip">Carte 1200×1200</div>
+      <div class="chip" id="coord">Survol : </div>
+      <div class="chip">Château : centre 597:597</div>
+      <div class="chip">Empreinte : 594:594 → 604:604</div>
     </div>
 
-    <div class="hint">
-      Molette = zoom (au pointeur) • Cliquer glisser = déplacement • Survol = info
-    </div>
-    <div class="status" id="status">Chargement des données</div>
-
-    <div class="mapWrapper">
-      <canvas id="map"></canvas>
-    </div>
-
-    <footer>
-      <div>© Kingdom 340</div>
-      <div class="muted">Données : data/map.csv</div>
-    </footer>
-
+    <canvas id="map"></canvas>
+    <div class="hint">Molette = zoom au pointeur. Cliquer glisser = déplacer. Survol = coordonnées.</div>
   </div>
 
-  <div class="tooltip" id="tip"></div>
-
 <script>
-  // =========================================================
-  // 1) Références DOM + variables globales (AVANT tout draw)
-  // =========================================================
   var canvas = document.getElementById("map");
   var ctx = canvas.getContext("2d");
-  var tip = document.getElementById("tip");
-  var statusEl = document.getElementById("status");
+  var coordEl = document.getElementById("coord");
 
-  var MAP_SIZE = 1200;
-  var CELL = 7.5;
-  var CASTLE = { x:597, y:597 };
+  var MAP_W = 1200;
+  var MAP_H = 1200;
+  var MAX_Y = 1199;
 
-  // ✅ var = pas de TDZ => plus jamais "before initialization"
-  var castleImg = new Image();
-  var castleReady = false;
-
-  // Pan + zoom
+  var tileSize = 24;
   var zoom = 1;
+  var MIN_ZOOM = 0.25;
+  var MAX_ZOOM = 6;
+
   var panX = 0;
   var panY = 0;
-  var MIN_ZOOM = 0.25;
-  var MAX_ZOOM = 20;
 
-  // Données
-  var players = [];
+  var dragging = false;
+  var lastX = 0;
+  var lastY = 0;
 
-  // =========================================================
-  // 2) Fonctions utilitaires
-  // =========================================================
+  var CASTLE_CENTER = { x:597, y:597 };
+  var CASTLE_FOOTPRINT = { x1:594, y1:594, x2:604, y2:604 };
+
+  var castleImg = new Image();
+  var castleReady = false;
+  castleImg.onload = function(){ castleReady = true; draw(); };
+  castleImg.onerror = function(){ castleReady = false; draw(); };
+  castleImg.src = "images/castle.png";
+
   function resizeCanvas(){
-    canvas.width = canvas.offsetWidth;
+    canvas.width = Math.floor(canvas.getBoundingClientRect().width);
     canvas.height = 720;
   }
 
-  // Projection losange
-  function project(x, y){
-    var sx = (x - y) * CELL;
-    var sy = (-(x + y)) * CELL;
-    return { sx: sx, sy: sy };
+  function worldToScreen(x, y){
+    var sx = panX + x * tileSize * zoom;
+    var sy = panY + (MAX_Y - y) * tileSize * zoom;
+    return { x:sx, y:sy };
   }
 
-  function centerOnCoord(x, y){
-    var p = project(x, y);
-    panX = canvas.width/2 - p.sx * zoom;
-    panY = canvas.height/2 - p.sy * zoom;
+  function screenToWorld(sx, sy){
+    var wx = (sx - panX) / (tileSize * zoom);
+    var wy = (sy - panY) / (tileSize * zoom);
+    var x = Math.floor(wx);
+    var y = MAX_Y - Math.floor(wy);
+    return { x:x, y:y };
   }
 
-  function resetView(noDraw){
-    zoom = 1;
-    centerOnCoord(CASTLE.x, CASTLE.y);
-    if(!noDraw) draw();
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  function centerOn(x, y){
+    var sx = canvas.width/2;
+    var sy = canvas.height/2;
+    panX = sx - x * tileSize * zoom;
+    panY = sy - (MAX_Y - y) * tileSize * zoom;
   }
 
-  function goCenter(){
-    centerOnCoord(CASTLE.x, CASTLE.y);
+  function init(){
+    resizeCanvas();
+    centerOn(CASTLE_CENTER.x, CASTLE_CENTER.y);
     draw();
   }
 
-  // =========================================================
-  // 3) CSV (robuste)
-  // =========================================================
-  function splitCSVLine(line){
-    var out = [];
-    var cur = "";
-    var inQ = false;
-    for(var i=0; i<line.length; i++){
-      var ch = line[i];
-      if(ch === '"'){
-        if(inQ && line[i+1] === '"'){ cur += '"'; i++; }
-        else inQ = !inQ;
-      }else if(ch === "," && !inQ){
-        out.push(cur);
-        cur = "";
-      }else{
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    for(var j=0; j<out.length; j++) out[j] = out[j].trim();
-    return out;
-  }
-
-  function cleanHeader(h){
-    return (h || "").replace(/^\uFEFF/, "").trim();
-  }
-
-  function cleanNumber(v){
-    var s = (v ?? "").toString()
-      .replace(/\u202f/g," ")
-      .replace(/\u00a0/g," ")
-      .replace(/\s/g,"")
-      .replace(/,/g,"");
-    var n = parseInt(s, 10);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  async function loadData(){
-    try{
-      var res = await fetch("data/map.csv", { cache:"no-store" });
-      if(!res.ok) throw new Error("HTTP " + res.status);
-      var text = await res.text();
-
-      var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
-      if(lines.length < 2) throw new Error("CSV vide ou incomplet");
-
-      var headers = splitCSVLine(lines[0]).map(cleanHeader);
-
-      var iPseudo = headers.findIndex(function(h){ return h.toLowerCase() === "pseudo"; });
-      var iX = headers.findIndex(function(h){ return h.toLowerCase() === "x"; });
-      var iY = headers.findIndex(function(h){ return h.toLowerCase() === "y"; });
-      var iAlliance = headers.findIndex(function(h){ return h.toLowerCase() === "alliance"; });
-
-      if(iPseudo === -1 || iX === -1 || iY === -1){
-        throw new Error("En-têtes attendus: Pseudo,X,Y,(Alliance). Reçu: " + headers.join(" | "));
-      }
-
-      players = lines.slice(1).map(function(line){
-        var cols = splitCSVLine(line);
-        return {
-          Pseudo: cols[iPseudo] || "",
-          X: cleanNumber(cols[iX]),
-          Y: cleanNumber(cols[iY]),
-          Alliance: iAlliance >= 0 ? (cols[iAlliance] || "") : ""
-        };
-      }).filter(function(p){
-        return p.Pseudo && Number.isFinite(p.X) && Number.isFinite(p.Y);
-      });
-
-      statusEl.textContent = "Joueurs chargés : " + players.length;
-      draw();
-    }catch(e){
-      players = [];
-      statusEl.textContent = "Erreur chargement CSV : " + e.message;
-      draw();
-    }
-  }
-
-  function colorForAlliance(a){
-    var colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
-    var hash = 0;
-    for(var i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
-    return colors[hash % colors.length];
-  }
-
-  // =========================================================
-  // 4) Dessin
-  // =========================================================
   function drawGrid(){
     ctx.save();
-    ctx.translate(panX, panY);
-    ctx.scale(zoom, zoom);
 
-    ctx.strokeStyle = "rgba(31,58,95,0.07)";
-    ctx.lineWidth = 1/zoom;
+    var ts = tileSize * zoom;
 
-    var range = 160;
-    var step = 10;
+    var x0 = Math.floor((-panX) / ts) - 1;
+    var y0 = Math.floor((-panY) / ts) - 1;
+    var x1 = Math.floor((canvas.width - panX) / ts) + 1;
+    var y1 = Math.floor((canvas.height - panY) / ts) + 1;
 
-    for(var dx=-range; dx<=range; dx+=step){
+    x0 = clamp(x0, 0, MAP_W-1);
+    x1 = clamp(x1, 0, MAP_W-1);
+    y0 = clamp(y0, 0, MAP_H-1);
+    y1 = clamp(y1, 0, MAP_H-1);
+
+    ctx.strokeStyle = "rgba(31,41,55,0.10)";
+    ctx.lineWidth = 1;
+
+    for(var x=x0; x<=x1; x++){
+      var sx = panX + x * ts;
       ctx.beginPath();
-      for(var dy=-range; dy<=range; dy+=1){
-        var p1 = project(CASTLE.x + dx, CASTLE.y + dy);
-        if(dy === -range) ctx.moveTo(p1.sx, p1.sy);
-        else ctx.lineTo(p1.sx, p1.sy);
-      }
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, canvas.height);
       ctx.stroke();
     }
 
-    for(var dy2=-range; dy2<=range; dy2+=step){
+    for(var yy=y0; yy<=y1; yy++){
+      var sy = panY + yy * ts;
       ctx.beginPath();
-      for(var dx2=-range; dx2<=range; dx2+=1){
-        var p2 = project(CASTLE.x + dx2, CASTLE.y + dy2);
-        if(dx2 === -range) ctx.moveTo(p2.sx, p2.sy);
-        else ctx.lineTo(p2.sx, p2.sy);
-      }
+      ctx.moveTo(0, sy);
+      ctx.lineTo(canvas.width, sy);
       ctx.stroke();
     }
 
     ctx.restore();
   }
 
-  function drawCastle(){
-    var c = project(CASTLE.x, CASTLE.y);
-    var x = panX + c.sx * zoom;
-    var y = panY + c.sy * zoom;
+  function drawCastleFootprint(){
+    var x1 = CASTLE_FOOTPRINT.x1;
+    var y1 = CASTLE_FOOTPRINT.y1;
+    var x2 = CASTLE_FOOTPRINT.x2;
+    var y2 = CASTLE_FOOTPRINT.y2;
 
-    var sizeCases = 14;
-    var px = sizeCases * CELL * zoom;
+    var ts = tileSize * zoom;
+
+    var topLeft = worldToScreen(x1, y2);
+    var w = (x2 - x1 + 1) * ts;
+    var h = (y2 - y1 + 1) * ts;
 
     if(castleReady){
       ctx.save();
       ctx.globalAlpha = 0.98;
-      ctx.drawImage(castleImg, x - px/2, y - px/2, px, px);
+      ctx.drawImage(castleImg, topLeft.x, topLeft.y, w, h);
       ctx.restore();
     }else{
-      ctx.fillStyle = "rgba(239,68,68,0.9)";
-      ctx.beginPath();
-      ctx.arc(x, y, 7, 0, Math.PI*2);
-      ctx.fill();
+      ctx.save();
+      ctx.fillStyle = "rgba(245,158,11,0.20)";
+      ctx.fillRect(topLeft.x, topLeft.y, w, h);
+      ctx.restore();
     }
-  }
 
-  function drawPlayers(){
-    var r = 4;
-    for(var i=0; i<players.length; i++){
-      var pl = players[i];
-      var p = project(pl.X, pl.Y);
-      var x = panX + p.sx * zoom;
-      var y = panY + p.sy * zoom;
-
-      ctx.fillStyle = pl.Alliance ? colorForAlliance(pl.Alliance) : "#1f3a5f";
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI*2);
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+    ctx.save();
+    ctx.strokeStyle = "rgba(239,68,68,0.75)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(topLeft.x, topLeft.y, w, h);
+    ctx.restore();
   }
 
   function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
     drawGrid();
-    drawCastle();
-    drawPlayers();
+    drawCastleFootprint();
   }
-
-  // =========================================================
-  // 5) Tooltip
-  // =========================================================
-  function escapeHtml(s){
-    return (s||"").replace(/[&<>"']/g, function(m){
-      return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" })[m];
-    });
-  }
-
-  function findHover(mx, my){
-    var best = null;
-    var bestD = 999999;
-    var hit = 10;
-
-    for(var i=0; i<players.length; i++){
-      var pl = players[i];
-      var p = project(pl.X, pl.Y);
-      var x = panX + p.sx * zoom;
-      var y = panY + p.sy * zoom;
-      var d = Math.hypot(mx-x, my-y);
-      if(d < hit && d < bestD){
-        bestD = d;
-        best = { pl: pl };
-      }
-    }
-    return best;
-  }
-
-  // =========================================================
-  // 6) Events UI (zoom/pan + boutons)
-  // =========================================================
-  var dragging = false;
-  var lastX = 0;
-  var lastY = 0;
 
   canvas.addEventListener("wheel", function(e){
     e.preventDefault();
+
     var rect = canvas.getBoundingClientRect();
     var mx = e.clientX - rect.left;
     var my = e.clientY - rect.top;
 
     var oldZoom = zoom;
     var factor = e.deltaY < 0 ? 1.15 : 0.87;
-    var next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+    var next = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
     if(next === zoom) return;
 
-    var worldX = (mx - panX) / oldZoom;
-    var worldY = (my - panY) / oldZoom;
+    var worldX = (mx - panX) / (tileSize * oldZoom);
+    var worldY = (my - panY) / (tileSize * oldZoom);
 
     zoom = next;
-    panX = mx - worldX * zoom;
-    panY = my - worldY * zoom;
+
+    panX = mx - worldX * tileSize * zoom;
+    panY = my - worldY * tileSize * zoom;
 
     draw();
   }, { passive:false });
@@ -427,49 +221,21 @@
     var rect = canvas.getBoundingClientRect();
     var mx = e.clientX - rect.left;
     var my = e.clientY - rect.top;
+    var w = screenToWorld(mx, my);
 
-    var h = findHover(mx, my);
-    if(h){
-      tip.style.display = "block";
-      tip.style.left = (e.clientX + 12) + "px";
-      tip.style.top  = (e.clientY + 12) + "px";
-      tip.innerHTML =
-        "<strong>" + escapeHtml(h.pl.Pseudo) + "</strong><br>" +
-        (h.pl.Alliance ? ("Alliance : " + escapeHtml(h.pl.Alliance) + "<br>") : "") +
-        "Coord : <strong>" + h.pl.X + ":" + h.pl.Y + "</strong>";
+    if(w.x >= 0 && w.x < MAP_W && w.y >= 0 && w.y < MAP_H){
+      coordEl.textContent = "Survol : " + w.x + ":" + w.y;
     }else{
-      tip.style.display = "none";
+      coordEl.textContent = "Survol : ";
     }
   });
-
-  document.getElementById("btnGo").addEventListener("click", function(){
-    var x = parseInt(document.getElementById("gotoX").value, 10);
-    var y = parseInt(document.getElementById("gotoY").value, 10);
-    if(!Number.isFinite(x) || !Number.isFinite(y)) return;
-    centerOnCoord(x, y);
-    draw();
-  });
-
-  document.getElementById("btnCenter").addEventListener("click", goCenter);
-  document.getElementById("btnReset").addEventListener("click", function(){ resetView(false); });
 
   window.addEventListener("resize", function(){
     resizeCanvas();
     draw();
   });
 
-  // =========================================================
-  // 7) INIT (tout à la fin)
-  // =========================================================
-  resizeCanvas();
-  resetView(true);     // centre sans dessiner
-  draw();              // 1er rendu
-  loadData();          // CSV
-
-  // Image château
-  castleImg.onload = function(){ castleReady = true; draw(); };
-  castleImg.onerror = function(){ castleReady = false; draw(); };
-  castleImg.src = "images/castle.png";
+  init();
 </script>
 </body>
 </html>
