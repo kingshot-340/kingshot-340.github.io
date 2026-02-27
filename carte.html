@@ -7,320 +7,234 @@
 <link rel="stylesheet" href="css/styles.css">
 
 <style>
-  .mapWrapper{
-    margin-top:20px;
-    border:1px solid var(--line);
-    border-radius:14px;
-    overflow:hidden;
-    background: linear-gradient(180deg, #eef7f1 0%, #e6f3ec 100%);
-  }
-  #map{
-    width:100%;
-    height:700px;
-    display:block;
-    cursor:grab;
-  }
-  .mapControls{
-    display:flex;
-    gap:10px;
-    margin-top:15px;
-    flex-wrap:wrap;
-  }
-  input{
-    padding:10px;
-    border-radius:10px;
-    border:1px solid var(--line);
-    font-weight:700;
-  }
-  button{
-    padding:10px 14px;
-    border-radius:10px;
-    border:none;
-    background:var(--primary);
-    color:#fff;
-    font-weight:800;
-    cursor:pointer;
-  }
-  button:hover{ background:var(--accent); }
-  .hint{
-    margin-top:10px;
-    color:var(--muted);
-    font-size:13px;
-  }
+.mapWrapper{
+  margin-top:20px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+  background:#e8f4ec;
+}
+#map{
+  width:100%;
+  height:700px;
+  display:block;
+  cursor:grab;
+}
+.mapControls{
+  display:flex;
+  gap:10px;
+  margin-top:15px;
+  flex-wrap:wrap;
+}
+input{
+  padding:10px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  font-weight:700;
+}
+button{
+  padding:10px 14px;
+  border-radius:10px;
+  border:none;
+  background:var(--primary);
+  color:#fff;
+  font-weight:800;
+  cursor:pointer;
+}
+button:hover{ background:var(--accent); }
+.hint{
+  margin-top:10px;
+  color:var(--muted);
+  font-size:13px;
+}
 </style>
 </head>
 
 <body>
 <div class="container">
 
-  <nav class="navbar">
-    <div class="brand">
-      <div class="title">Kingdom 340</div>
-      <div class="subtitle">Carte stratégique</div>
-    </div>
-    <div class="navlinks">
-      <a href="index.html">Accueil</a>
-      <a href="classements.html">Classements</a>
-      <a class="active" href="carte.html">Carte</a>
-      <a href="planification.html">Planification</a>
-      <a href="membres/index.html">Membres</a>
-    </div>
-  </nav>
-
-  <h1 class="pageTitle">Carte 1200×1200</h1>
-  <p class="pageIntro">
-    Carte stratégique basée sur une grille (rapide et lisible). Centre château : <strong>597:597</strong>.
-  </p>
-
-  <div class="mapControls">
-    <input type="number" id="gotoX" placeholder="X (0-1199)" min="0" max="1199">
-    <input type="number" id="gotoY" placeholder="Y (0-1199)" min="0" max="1199">
-    <button type="button" onclick="goToCoord()">Aller à X:Y</button>
-    <button type="button" onclick="goCenter()">Centrer 597:597</button>
-    <button type="button" onclick="resetView()">Réinitialiser</button>
+<nav class="navbar">
+  <div class="brand">
+    <div class="title">Kingdom 340</div>
+    <div class="subtitle">Carte stratégique</div>
   </div>
-
-  <div class="hint">
-    Molette = zoom • Cliquer-glisser = déplacement
+  <div class="navlinks">
+    <a href="index.html">Accueil</a>
+    <a href="classements.html">Classements</a>
+    <a class="active" href="carte.html">Carte</a>
+    <a href="planification.html">Planification</a>
+    <a href="membres/index.html">Membres</a>
   </div>
+</nav>
 
-  <div class="mapWrapper">
-    <canvas id="map"></canvas>
-  </div>
+<h1 class="pageTitle">Carte 1200×1200</h1>
+<p class="pageIntro">
+Centre château : <strong>597:597</strong>
+</p>
 
-  <footer>
-    <div>© Kingdom 340</div>
-    <div class="muted">Données : data/map.csv</div>
-  </footer>
+<div class="mapControls">
+  <button onclick="goCenter()">Centrer château</button>
+  <button onclick="resetView()">Réinitialiser</button>
+</div>
+
+<div class="hint">
+Molette = zoom • Cliquer-glisser = déplacement
+</div>
+
+<div class="mapWrapper">
+  <canvas id="map"></canvas>
+</div>
+
+<footer>
+  <div>© Kingdom 340</div>
+  <div>Données : data/map.csv</div>
+</footer>
 
 </div>
 
 <script>
-  // ===== Canvas setup =====
-  const canvas = document.getElementById("map");
-  const ctx = canvas.getContext("2d");
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
 
-  function resizeCanvas(){
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 700;
+function resizeCanvas(){
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 700;
+}
+resizeCanvas();
+window.addEventListener("resize", ()=>{resizeCanvas(); resetView();});
+
+const MAP_SIZE = 1200;
+const CASTLE_X = 597;
+const CASTLE_Y = 597;
+
+let scale = canvas.width / MAP_SIZE;
+let offsetX = 0;
+let offsetY = 0;
+
+let players = [];
+
+// ===== Chargement image château =====
+const castleImg = new Image();
+castleImg.src = "images/castle.png";
+
+// ===== Nettoyage nombres =====
+function cleanNumber(value){
+  return parseInt((value||"").toString().replace(/\s/g,'')) || 0;
+}
+
+// ===== CSV =====
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',');
+  return lines.slice(1).map(line=>{
+    const cols = line.split(',');
+    const obj = {};
+    headers.forEach((h,i)=> obj[h.trim()] = (cols[i]||"").trim());
+    return obj;
+  });
+}
+
+async function loadData(){
+  try{
+    const res = await fetch('data/map.csv',{cache:'no-store'});
+    const text = await res.text();
+    players = parseCSV(text).map(p=>({
+      Pseudo:p.Pseudo,
+      X:cleanNumber(p.X),
+      Y:cleanNumber(p.Y),
+      Alliance:p.Alliance||""
+    }));
+  }catch(e){
+    players=[];
   }
-  resizeCanvas();
-  window.addEventListener("resize", () => { resizeCanvas(); resetView(); });
+  draw();
+}
 
-  // ===== Map constants =====
-  const MAP_SIZE = 1200;
-  const CASTLE_X = 597;
-  const CASTLE_Y = 597;
+// ===== DESSIN =====
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  drawCastle();
+  drawPlayers();
+}
 
-  // ===== View state (zoom + pan) =====
-  let scale = canvas.width / MAP_SIZE; // zoom initial
-  let offsetX = 0;
-  let offsetY = 0;
-
-  function minScale(){
-    return (canvas.width / MAP_SIZE) * 0.6;
-  }
-  function maxScale(){
-    return (canvas.width / MAP_SIZE) * 12;
-  }
-
-  // ===== Data =====
-  let players = [];
-
-  function cleanNumber(value){
-    return parseInt(
-      (value ?? '').toString()
-        .replace(/\u202f/g,' ')
-        .replace(/\u00a0/g,' ')
-        .replace(/\s/g,'')
-        .replace(/,/g,'')
-        .replace(/\./g,'')
-    ) || 0;
-  }
-
-  function parseCSV(text){
-    const lines = text.trim().split(/\r?\n/);
-    const headers = lines[0].split(',').map(x => x.trim());
-
-    return lines.slice(1)
-      .filter(l => l.trim().length > 0)
-      .map(line => {
-        const cols = line.split(',');
-        const obj = {};
-        headers.forEach((h,i) => obj[h] = (cols[i] ?? '').trim());
-        return obj;
-      });
-  }
-
-  async function loadData(){
-    try{
-      const res = await fetch('data/map.csv', { cache:'no-store' });
-      const text = await res.text();
-
-      players = parseCSV(text).map(p => ({
-        Pseudo: p.Pseudo || "",
-        X: cleanNumber(p.X),
-        Y: cleanNumber(p.Y),
-        Alliance: p.Alliance || ""
-      }));
-    }catch(e){
-      players = [];
-    }
-    draw();
-  }
-
-  // ===== Rendering =====
-  function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawGrid();
-    drawAxesLabels();
-    drawCenter();
-    drawPlayers();
-  }
-
-  function drawGrid(){
-    ctx.strokeStyle = "rgba(31,58,95,0.08)";
-    ctx.lineWidth = 1;
-
-    for(let i=0; i<=MAP_SIZE; i+=100){
-      ctx.beginPath();
-      ctx.moveTo(i*scale+offsetX, offsetY);
-      ctx.lineTo(i*scale+offsetX, MAP_SIZE*scale+offsetY);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(offsetX, i*scale+offsetY);
-      ctx.lineTo(MAP_SIZE*scale+offsetX, i*scale+offsetY);
-      ctx.stroke();
-    }
-  }
-
-  function drawAxesLabels(){
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "12px ui-sans-serif, system-ui";
-    for(let i=0; i<=MAP_SIZE; i+=200){
-      ctx.fillText(i, i*scale+offsetX+4, offsetY+14);
-      ctx.fillText(i, offsetX+4, i*scale+offsetY-4);
-    }
-  }
-
-  function drawCenter(){
-    const cx = CASTLE_X*scale+offsetX;
-    const cy = CASTLE_Y*scale+offsetY;
-
-    ctx.fillStyle = "#ef4444";
+function drawGrid(){
+  ctx.strokeStyle="rgba(0,0,0,0.05)";
+  ctx.lineWidth=1;
+  for(let i=0;i<=MAP_SIZE;i+=100){
     ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, Math.PI*2);
+    ctx.moveTo(i*scale+offsetX,offsetY);
+    ctx.lineTo(i*scale+offsetX,MAP_SIZE*scale+offsetY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(offsetX,i*scale+offsetY);
+    ctx.lineTo(MAP_SIZE*scale+offsetX,i*scale+offsetY);
+    ctx.stroke();
+  }
+}
+
+function drawCastle(){
+  if(!castleImg.complete) return;
+
+  const size = 80 * scale;
+  const x = CASTLE_X*scale + offsetX - size/2;
+  const y = CASTLE_Y*scale + offsetY - size/2;
+
+  ctx.drawImage(castleImg, x, y, size, size);
+}
+
+function drawPlayers(){
+  players.forEach(p=>{
+    const x = p.X*scale + offsetX;
+    const y = p.Y*scale + offsetY;
+    const r = 4 * scale;
+
+    ctx.fillStyle = "#1f3a5f";
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
     ctx.fill();
-
-    ctx.fillStyle = "#ef4444";
-    ctx.font = "12px ui-sans-serif, system-ui";
-    ctx.fillText("Château 597:597", cx + 10, cy - 10);
-  }
-
-  function colorForAlliance(a){
-    const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
-    let hash = 0;
-    for(let i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
-    return colors[hash % colors.length];
-  }
-
-  function drawPlayers(){
-    const r = 4; // taille fixe à l'écran
-
-    players.forEach(p=>{
-      const x = p.X*scale+offsetX;
-      const y = p.Y*scale+offsetY;
-
-      ctx.fillStyle = p.Alliance ? colorForAlliance(p.Alliance) : "#1f3a5f";
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI*2);
-      ctx.fill();
-
-      // contour blanc discret pour la lisibilité
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    });
-  }
-
-  // ===== Controls =====
-  function goToCoord(){
-    const x = parseInt(document.getElementById("gotoX").value);
-    const y = parseInt(document.getElementById("gotoY").value);
-    if(!Number.isFinite(x) || !Number.isFinite(y)) return;
-
-    offsetX = canvas.width/2 - x*scale;
-    offsetY = canvas.height/2 - y*scale;
-    draw();
-  }
-
-  function goCenter(){
-    offsetX = canvas.width/2 - CASTLE_X*scale;
-    offsetY = canvas.height/2 - CASTLE_Y*scale;
-    draw();
-  }
-
-  function resetView(){
-    scale = canvas.width / MAP_SIZE;
-    offsetX = 0;
-    offsetY = 0;
-    draw();
-  }
-
-  // Zoom molette (autour de la souris)
-  canvas.addEventListener("wheel", e=>{
-    e.preventDefault();
-
-    const oldScale = scale;
-    const factor = e.deltaY < 0 ? 1.12 : 0.88;
-    let newScale = scale * factor;
-
-    newScale = Math.max(minScale(), Math.min(maxScale(), newScale));
-    if(newScale === scale) return;
-
-    const mx = e.offsetX;
-    const my = e.offsetY;
-
-    const worldX = (mx - offsetX) / oldScale;
-    const worldY = (my - offsetY) / oldScale;
-
-    scale = newScale;
-
-    offsetX = mx - worldX * scale;
-    offsetY = my - worldY * scale;
-
-    draw();
-  }, { passive:false });
-
-  // Déplacement drag
-  let dragging=false;
-  let lastX=0,lastY=0;
-
-  canvas.addEventListener("mousedown", e=>{
-    dragging=true;
-    lastX=e.clientX;
-    lastY=e.clientY;
-    canvas.style.cursor="grabbing";
   });
+}
 
-  window.addEventListener("mouseup", ()=>{
-    dragging=false;
-    canvas.style.cursor="grab";
-  });
+// ===== CONTROLES =====
+function goCenter(){
+  offsetX = canvas.width/2 - CASTLE_X*scale;
+  offsetY = canvas.height/2 - CASTLE_Y*scale;
+  draw();
+}
+function resetView(){
+  scale = canvas.width / MAP_SIZE;
+  offsetX = 0;
+  offsetY = 0;
+  draw();
+}
 
-  window.addEventListener("mousemove", e=>{
-    if(!dragging) return;
-    offsetX += (e.clientX - lastX);
-    offsetY += (e.clientY - lastY);
-    lastX=e.clientX;
-    lastY=e.clientY;
-    draw();
-  });
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const factor = e.deltaY<0?1.15:0.85;
+  scale *= factor;
+  draw();
+},{passive:false});
 
-  // ===== Init =====
-  loadData();
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener("mousedown",e=>{
+  dragging=true;
+  lastX=e.clientX;
+  lastY=e.clientY;
+  canvas.style.cursor="grabbing";
+});
+window.addEventListener("mouseup",()=>{dragging=false;canvas.style.cursor="grab";});
+window.addEventListener("mousemove",e=>{
+  if(!dragging) return;
+  offsetX += e.clientX-lastX;
+  offsetY += e.clientY-lastY;
+  lastX=e.clientX;
+  lastY=e.clientY;
+  draw();
+});
+
+loadData();
 </script>
-
 </body>
 </html>
