@@ -114,6 +114,8 @@ const MAP_SIZE = 1200;
 let scale = canvas.width / MAP_SIZE;   // zoom initial
 let offsetX = 0;
 let offsetY = 0;
+const MIN_SCALE = canvas.width / MAP_SIZE * 0.6;
+const MAX_SCALE = canvas.width / MAP_SIZE * 12;
 
 // données
 let players = [];
@@ -185,18 +187,18 @@ function drawAxesLabels(){
   }
 }
 
-function drawCenter(){
-  const cx = 597*scale+offsetX;
-  const cy = 597*scale+offsetY;
+function drawPlayers(){
+  const r = 4; // taille fixe à l'écran
 
-  ctx.fillStyle = "#ef4444";
-  ctx.beginPath();
-  ctx.arc(cx, cy, 6, 0, Math.PI*2);
-  ctx.fill();
+  players.forEach(p=>{
+    const x = p.X*scale+offsetX;
+    const y = p.Y*scale+offsetY;
 
-  ctx.fillStyle = "#ef4444";
-  ctx.font = "12px ui-sans-serif, system-ui";
-  ctx.fillText("Château 597:597", cx+10, cy-10);
+    ctx.fillStyle = p.Alliance ? colorForAlliance(p.Alliance) : "#1f3a5f";
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+  });
 }
 
 function colorForAlliance(a){
@@ -251,16 +253,25 @@ function resetView(){
 // zoom molette (autour de la souris)
 canvas.addEventListener("wheel", e=>{
   e.preventDefault();
-  const zoom = e.deltaY < 0 ? 1.12 : 0.88;
+
+  const oldScale = scale;
+  const factor = e.deltaY < 0 ? 1.12 : 0.88;
+  let newScale = scale * factor;
+
+  // clamp
+  newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+  if(newScale === scale) return;
 
   const mx = e.offsetX;
   const my = e.offsetY;
 
-  const worldX = (mx - offsetX) / scale;
-  const worldY = (my - offsetY) / scale;
+  // coord monde sous la souris
+  const worldX = (mx - offsetX) / oldScale;
+  const worldY = (my - offsetY) / oldScale;
 
-  scale *= zoom;
+  scale = newScale;
 
+  // garder le point sous la souris fixe
   offsetX = mx - worldX * scale;
   offsetY = my - worldY * scale;
 
