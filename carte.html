@@ -118,48 +118,57 @@
   <div class="tooltip" id="tip"></div>
 
 <script>
-  const canvas = document.getElementById("map");
-  const ctx = canvas.getContext("2d");
-  const tip = document.getElementById("tip");
-  const statusEl = document.getElementById("status");
+  // =========================================================
+  // 1) Références DOM + variables globales (AVANT tout draw)
+  // =========================================================
+  var canvas = document.getElementById("map");
+  var ctx = canvas.getContext("2d");
+  var tip = document.getElementById("tip");
+  var statusEl = document.getElementById("status");
 
-  const MAP_SIZE = 1200;
+  var MAP_SIZE = 1200;
+  var CELL = 7.5;
+  var CASTLE = { x:597, y:597 };
 
-  // Projection losange
-  const CELL = 7.5;
-  function project(x, y){
-    const sx = (x - y) * CELL;
-    const sy = (-(x + y)) * CELL;
-    return { sx, sy };
-  }
+  // ✅ var = pas de TDZ => plus jamais "before initialization"
+  var castleImg = new Image();
+  var castleReady = false;
 
-  const CASTLE = { x:597, y:597 };
+  // Pan + zoom
+  var zoom = 1;
+  var panX = 0;
+  var panY = 0;
+  var MIN_ZOOM = 0.25;
+  var MAX_ZOOM = 20;
 
-  // ✅ Château en image (déclaré AVANT le premier draw)
-  const castleImg = new Image();
-  let castleReady = false;
-  castleImg.onload = () => { castleReady = true; draw(); };
-  castleImg.onerror = () => { castleReady = false; draw(); };
-  castleImg.src = "images/castle.png";
+  // Données
+  var players = [];
 
+  // =========================================================
+  // 2) Fonctions utilitaires
+  // =========================================================
   function resizeCanvas(){
     canvas.width = canvas.offsetWidth;
     canvas.height = 720;
   }
-  resizeCanvas();
-  window.addEventListener("resize", () => { resizeCanvas(); draw(); });
 
-  // Pan + zoom
-  let zoom = 1;
-  let panX = 0;
-  let panY = 0;
-  const MIN_ZOOM = 0.25;
-  const MAX_ZOOM = 20;
+  // Projection losange
+  function project(x, y){
+    var sx = (x - y) * CELL;
+    var sy = (-(x + y)) * CELL;
+    return { sx: sx, sy: sy };
+  }
 
   function centerOnCoord(x, y){
-    const p = project(x, y);
+    var p = project(x, y);
     panX = canvas.width/2 - p.sx * zoom;
     panY = canvas.height/2 - p.sy * zoom;
+  }
+
+  function resetView(noDraw){
+    zoom = 1;
+    centerOnCoord(CASTLE.x, CASTLE.y);
+    if(!noDraw) draw();
   }
 
   function goCenter(){
@@ -167,83 +176,16 @@
     draw();
   }
 
-  function resetView(){
-    zoom = 1;
-    centerOnCoord(CASTLE.x, CASTLE.y);
-    draw();
-  }
-
-  // init
-  resetView();
-
-  // Boutons
-  document.getElementById("btnGo").addEventListener("click", () => {
-    const x = parseInt(document.getElementById("gotoX").value, 10);
-    const y = parseInt(document.getElementById("gotoY").value, 10);
-    if(!Number.isFinite(x) || !Number.isFinite(y)) return;
-    centerOnCoord(x, y);
-    draw();
-  });
-  document.getElementById("btnCenter").addEventListener("click", goCenter);
-  document.getElementById("btnReset").addEventListener("click", resetView);
-
-  // Zoom au pointeur
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const oldZoom = zoom;
-    const factor = e.deltaY < 0 ? 1.15 : 0.87;
-    const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
-    if(next === zoom) return;
-
-    const worldX = (mx - panX) / oldZoom;
-    const worldY = (my - panY) / oldZoom;
-
-    zoom = next;
-
-    panX = mx - worldX * zoom;
-    panY = my - worldY * zoom;
-
-    draw();
-  }, { passive:false });
-
-  // Drag
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
-
-  canvas.addEventListener("mousedown", (e) => {
-    dragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    canvas.style.cursor = "grabbing";
-  });
-
-  window.addEventListener("mouseup", () => {
-    dragging = false;
-    canvas.style.cursor = "grab";
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if(!dragging) return;
-    panX += (e.clientX - lastX);
-    panY += (e.clientY - lastY);
-    lastX = e.clientX;
-    lastY = e.clientY;
-    draw();
-  });
-
-  // CSV robuste (gère guillemets)
+  // =========================================================
+  // 3) CSV (robuste)
+  // =========================================================
   function splitCSVLine(line){
-    const out = [];
-    let cur = "";
-    let inQ = false;
-    for(let i=0; i<line.length; i++){
-      const ch = line[i];
-      if(ch === '"' ){
+    var out = [];
+    var cur = "";
+    var inQ = false;
+    for(var i=0; i<line.length; i++){
+      var ch = line[i];
+      if(ch === '"'){
         if(inQ && line[i+1] === '"'){ cur += '"'; i++; }
         else inQ = !inQ;
       }else if(ch === "," && !inQ){
@@ -254,54 +196,55 @@
       }
     }
     out.push(cur);
-    return out.map(s => s.trim());
+    for(var j=0; j<out.length; j++) out[j] = out[j].trim();
+    return out;
   }
 
   function cleanHeader(h){
-    return (h || "").replace(/^\uFEFF/, "").trim(); // enlève BOM
+    return (h || "").replace(/^\uFEFF/, "").trim();
   }
 
   function cleanNumber(v){
-    return parseInt(
-      (v ?? "").toString()
-        .replace(/\u202f/g," ")
-        .replace(/\u00a0/g," ")
-        .replace(/\s/g,"")
-        .replace(/,/g,"")
-    , 10) || 0;
+    var s = (v ?? "").toString()
+      .replace(/\u202f/g," ")
+      .replace(/\u00a0/g," ")
+      .replace(/\s/g,"")
+      .replace(/,/g,"");
+    var n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
   }
-
-  let players = [];
 
   async function loadData(){
     try{
-      const res = await fetch("data/map.csv", { cache:"no-store" });
+      var res = await fetch("data/map.csv", { cache:"no-store" });
       if(!res.ok) throw new Error("HTTP " + res.status);
-      const text = await res.text();
+      var text = await res.text();
 
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
       if(lines.length < 2) throw new Error("CSV vide ou incomplet");
 
-      const headers = splitCSVLine(lines[0]).map(cleanHeader);
+      var headers = splitCSVLine(lines[0]).map(cleanHeader);
 
-      const iPseudo = headers.findIndex(h => h.toLowerCase() === "pseudo");
-      const iX = headers.findIndex(h => h.toLowerCase() === "x");
-      const iY = headers.findIndex(h => h.toLowerCase() === "y");
-      const iAlliance = headers.findIndex(h => h.toLowerCase() === "alliance");
+      var iPseudo = headers.findIndex(function(h){ return h.toLowerCase() === "pseudo"; });
+      var iX = headers.findIndex(function(h){ return h.toLowerCase() === "x"; });
+      var iY = headers.findIndex(function(h){ return h.toLowerCase() === "y"; });
+      var iAlliance = headers.findIndex(function(h){ return h.toLowerCase() === "alliance"; });
 
       if(iPseudo === -1 || iX === -1 || iY === -1){
         throw new Error("En-têtes attendus: Pseudo,X,Y,(Alliance). Reçu: " + headers.join(" | "));
       }
 
-      players = lines.slice(1).map(line => {
-        const cols = splitCSVLine(line);
+      players = lines.slice(1).map(function(line){
+        var cols = splitCSVLine(line);
         return {
           Pseudo: cols[iPseudo] || "",
           X: cleanNumber(cols[iX]),
           Y: cleanNumber(cols[iY]),
           Alliance: iAlliance >= 0 ? (cols[iAlliance] || "") : ""
         };
-      }).filter(p => p.Pseudo && Number.isFinite(p.X) && Number.isFinite(p.Y));
+      }).filter(function(p){
+        return p.Pseudo && Number.isFinite(p.X) && Number.isFinite(p.Y);
+      });
 
       statusEl.textContent = "Joueurs chargés : " + players.length;
       draw();
@@ -313,13 +256,15 @@
   }
 
   function colorForAlliance(a){
-    const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
-    let hash = 0;
-    for(let i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
+    var colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
+    var hash = 0;
+    for(var i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
     return colors[hash % colors.length];
   }
 
-  // Grille simple autour du château
+  // =========================================================
+  // 4) Dessin
+  // =========================================================
   function drawGrid(){
     ctx.save();
     ctx.translate(panX, panY);
@@ -328,25 +273,25 @@
     ctx.strokeStyle = "rgba(31,58,95,0.07)";
     ctx.lineWidth = 1/zoom;
 
-    const range = 160;
-    const step = 10;
+    var range = 160;
+    var step = 10;
 
-    for(let dx=-range; dx<=range; dx+=step){
+    for(var dx=-range; dx<=range; dx+=step){
       ctx.beginPath();
-      for(let dy=-range; dy<=range; dy+=1){
-        const p = project(CASTLE.x + dx, CASTLE.y + dy);
-        if(dy === -range) ctx.moveTo(p.sx, p.sy);
-        else ctx.lineTo(p.sx, p.sy);
+      for(var dy=-range; dy<=range; dy+=1){
+        var p1 = project(CASTLE.x + dx, CASTLE.y + dy);
+        if(dy === -range) ctx.moveTo(p1.sx, p1.sy);
+        else ctx.lineTo(p1.sx, p1.sy);
       }
       ctx.stroke();
     }
 
-    for(let dy=-range; dy<=range; dy+=step){
+    for(var dy2=-range; dy2<=range; dy2+=step){
       ctx.beginPath();
-      for(let dx=-range; dx<=range; dx+=1){
-        const p = project(CASTLE.x + dx, CASTLE.y + dy);
-        if(dx === -range) ctx.moveTo(p.sx, p.sy);
-        else ctx.lineTo(p.sx, p.sy);
+      for(var dx2=-range; dx2<=range; dx2+=1){
+        var p2 = project(CASTLE.x + dx2, CASTLE.y + dy2);
+        if(dx2 === -range) ctx.moveTo(p2.sx, p2.sy);
+        else ctx.lineTo(p2.sx, p2.sy);
       }
       ctx.stroke();
     }
@@ -355,13 +300,12 @@
   }
 
   function drawCastle(){
-    const c = project(CASTLE.x, CASTLE.y);
-    const x = panX + c.sx * zoom;
-    const y = panY + c.sy * zoom;
+    var c = project(CASTLE.x, CASTLE.y);
+    var x = panX + c.sx * zoom;
+    var y = panY + c.sy * zoom;
 
-    // taille en "cases" à ajuster
-    const sizeCases = 14;
-    const px = sizeCases * CELL * zoom;
+    var sizeCases = 14;
+    var px = sizeCases * CELL * zoom;
 
     if(castleReady){
       ctx.save();
@@ -377,11 +321,12 @@
   }
 
   function drawPlayers(){
-    const r = 4;
-    for(const pl of players){
-      const p = project(pl.X, pl.Y);
-      const x = panX + p.sx * zoom;
-      const y = panY + p.sy * zoom;
+    var r = 4;
+    for(var i=0; i<players.length; i++){
+      var pl = players[i];
+      var p = project(pl.X, pl.Y);
+      var x = panX + p.sx * zoom;
+      var y = panY + p.sy * zoom;
 
       ctx.fillStyle = pl.Alliance ? colorForAlliance(pl.Alliance) : "#1f3a5f";
       ctx.beginPath();
@@ -401,51 +346,130 @@
     drawPlayers();
   }
 
-  // Tooltip survol points
+  // =========================================================
+  // 5) Tooltip
+  // =========================================================
   function escapeHtml(s){
-    return (s||"").replace(/[&<>"']/g, (m)=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[m]));
+    return (s||"").replace(/[&<>"']/g, function(m){
+      return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" })[m];
+    });
   }
 
   function findHover(mx, my){
-    let best = null;
-    let bestD = 999999;
-    const hit = 10;
+    var best = null;
+    var bestD = 999999;
+    var hit = 10;
 
-    for(const pl of players){
-      const p = project(pl.X, pl.Y);
-      const x = panX + p.sx * zoom;
-      const y = panY + p.sy * zoom;
-      const d = Math.hypot(mx-x, my-y);
+    for(var i=0; i<players.length; i++){
+      var pl = players[i];
+      var p = project(pl.X, pl.Y);
+      var x = panX + p.sx * zoom;
+      var y = panY + p.sy * zoom;
+      var d = Math.hypot(mx-x, my-y);
       if(d < hit && d < bestD){
         bestD = d;
-        best = { pl, x, y };
+        best = { pl: pl };
       }
     }
     return best;
   }
 
-  canvas.addEventListener("mousemove", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+  // =========================================================
+  // 6) Events UI (zoom/pan + boutons)
+  // =========================================================
+  var dragging = false;
+  var lastX = 0;
+  var lastY = 0;
 
-    const h = findHover(mx, my);
+  canvas.addEventListener("wheel", function(e){
+    e.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+
+    var oldZoom = zoom;
+    var factor = e.deltaY < 0 ? 1.15 : 0.87;
+    var next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+    if(next === zoom) return;
+
+    var worldX = (mx - panX) / oldZoom;
+    var worldY = (my - panY) / oldZoom;
+
+    zoom = next;
+    panX = mx - worldX * zoom;
+    panY = my - worldY * zoom;
+
+    draw();
+  }, { passive:false });
+
+  canvas.addEventListener("mousedown", function(e){
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.style.cursor = "grabbing";
+  });
+
+  window.addEventListener("mouseup", function(){
+    dragging = false;
+    canvas.style.cursor = "grab";
+  });
+
+  window.addEventListener("mousemove", function(e){
+    if(!dragging) return;
+    panX += (e.clientX - lastX);
+    panY += (e.clientY - lastY);
+    lastX = e.clientX;
+    lastY = e.clientY;
+    draw();
+  });
+
+  canvas.addEventListener("mousemove", function(e){
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+
+    var h = findHover(mx, my);
     if(h){
       tip.style.display = "block";
       tip.style.left = (e.clientX + 12) + "px";
       tip.style.top  = (e.clientY + 12) + "px";
-      tip.innerHTML = `<strong>${escapeHtml(h.pl.Pseudo)}</strong><br>
-        ${h.pl.Alliance ? `Alliance : ${escapeHtml(h.pl.Alliance)}<br>` : ``}
-        Coord : <strong>${h.pl.X}:${h.pl.Y}</strong>`;
+      tip.innerHTML =
+        "<strong>" + escapeHtml(h.pl.Pseudo) + "</strong><br>" +
+        (h.pl.Alliance ? ("Alliance : " + escapeHtml(h.pl.Alliance) + "<br>") : "") +
+        "Coord : <strong>" + h.pl.X + ":" + h.pl.Y + "</strong>";
     }else{
       tip.style.display = "none";
     }
   });
 
-  // Lance le chargement
-  loadData();
+  document.getElementById("btnGo").addEventListener("click", function(){
+    var x = parseInt(document.getElementById("gotoX").value, 10);
+    var y = parseInt(document.getElementById("gotoY").value, 10);
+    if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+    centerOnCoord(x, y);
+    draw();
+  });
+
+  document.getElementById("btnCenter").addEventListener("click", goCenter);
+  document.getElementById("btnReset").addEventListener("click", function(){ resetView(false); });
+
+  window.addEventListener("resize", function(){
+    resizeCanvas();
+    draw();
+  });
+
+  // =========================================================
+  // 7) INIT (tout à la fin)
+  // =========================================================
+  resizeCanvas();
+  resetView(true);     // centre sans dessiner
+  draw();              // 1er rendu
+  loadData();          // CSV
+
+  // Image château
+  castleImg.onload = function(){ castleReady = true; draw(); };
+  castleImg.onerror = function(){ castleReady = false; draw(); };
+  castleImg.src = "images/castle.png";
 </script>
 </body>
 </html>
