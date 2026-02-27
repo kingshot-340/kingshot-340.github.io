@@ -123,13 +123,6 @@
   const tip = document.getElementById("tip");
   const statusEl = document.getElementById("status");
 
-  function resizeCanvas(){
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 720;
-  }
-  resizeCanvas();
-  window.addEventListener("resize", () => { resizeCanvas(); draw(); });
-
   const MAP_SIZE = 1200;
 
   // Projection losange
@@ -141,6 +134,20 @@
   }
 
   const CASTLE = { x:597, y:597 };
+
+  // ✅ Château en image (déclaré AVANT le premier draw)
+  const castleImg = new Image();
+  let castleReady = false;
+  castleImg.onload = () => { castleReady = true; draw(); };
+  castleImg.onerror = () => { castleReady = false; draw(); };
+  castleImg.src = "images/castle.png";
+
+  function resizeCanvas(){
+    canvas.width = canvas.offsetWidth;
+    canvas.height = 720;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", () => { resizeCanvas(); draw(); });
 
   // Pan + zoom
   let zoom = 1;
@@ -346,12 +353,6 @@
 
     ctx.restore();
   }
-
-  // Château en image (simple pour l’instant, au centre)
-  const castleImg = new Image();
-  castleImg.src = "images/castle.png";
-  let castleReady = false;
-  castleImg.onload = () => { castleReady = true; draw(); };
 
   function drawCastle(){
     const c = project(CASTLE.x, CASTLE.y);
