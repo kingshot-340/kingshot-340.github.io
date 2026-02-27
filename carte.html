@@ -211,7 +211,7 @@ Molette = zoom (au pointeur) • Cliquer-glisser = déplacement • Survol = inf
   // Convertit coord monde (X,Y) -> pixel écran (sx, sy)
   function worldToScreen(x, y){
     const dx = x - CENTER_X;
-    const dy = y - CENTER_Y;
+    const dy = CENTER_Y - y; // <-- inversion de l'axe Y (très souvent le cas en map de jeu)
 
     const sx = (canvas.width/2) + offsetX + (dx - dy) * (tileW()/2);
     const sy = (canvas.height/2) + offsetY + (dx + dy) * (tileH()/2);
