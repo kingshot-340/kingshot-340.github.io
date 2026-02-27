@@ -1,42 +1,292 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Carte • Kingdom 340</title>
-  <link rel="stylesheet" href="css/styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte • Kingdom 340</title>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  .mapWrapper{
+    margin-top:20px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    overflow:hidden;
+    background:#fff;
+  }
+  #map{
+    width:100%;
+    height:700px;
+    display:block;
+    cursor:grab;
+  }
+  .mapControls{
+    display:flex;
+    gap:10px;
+    margin-top:15px;
+    flex-wrap:wrap;
+  }
+  input{
+    padding:10px;
+    border-radius:10px;
+    border:1px solid var(--line);
+    font-weight:700;
+  }
+  button{
+    padding:10px 14px;
+    border-radius:10px;
+    border:none;
+    background:var(--primary);
+    color:#fff;
+    font-weight:800;
+    cursor:pointer;
+  }
+  button:hover{ background:var(--accent); }
+  .hint{
+    margin-top:10px;
+    color:var(--muted);
+    font-size:13px;
+  }
+</style>
 </head>
 <body>
-  <div class="container">
+<div class="container">
 
-    <nav class="navbar">
-      <div class="brand">
-        <div class="title">Kingdom 340</div>
-        <div class="subtitle">Hub officiel et neutre du royaume</div>
-      </div>
-      <div class="navlinks">
-        <a href="index.html">Accueil</a>
-        <a href="classements.html">Classements</a>
-        <a class="active" href="carte.html">Carte</a>
-        <a href="planification.html">Planification</a>
-        <a href="membres/index.html">Membres</a>
-      </div>
-    </nav>
-
-    <h1 class="pageTitle">Carte</h1>
-    <p class="pageIntro">
-      Aperçu public possible. La carte complète (filtres, niveaux, alliances, repères) sera dans l’espace membres.
-    </p>
-
-    <div class="notice">
-      À venir : carte interactive, recherche par coordonnées, filtres type/niveau/alliance.
-    </div>
-
-    <footer>
-      <div>© Kingdom 340</div>
-      <div>Hébergé via GitHub Pages</div>
-    </footer>
-
+<nav class="navbar">
+  <div class="brand">
+    <div class="title">Kingdom 340</div>
+    <div class="subtitle">Carte stratégique</div>
   </div>
+  <div class="navlinks">
+    <a href="index.html">Accueil</a>
+    <a href="classements.html">Classements</a>
+    <a class="active" href="carte.html">Carte</a>
+    <a href="planification.html">Planification</a>
+    <a href="membres/index.html">Membres</a>
+  </div>
+</nav>
+
+<h1 class="pageTitle">Carte 1200×1200</h1>
+<p class="pageIntro">
+Carte stratégique basée sur une grille (rapide et lisible). Centre château : <strong>597:597</strong>.
+</p>
+
+<div class="mapControls">
+  <input type="number" id="gotoX" placeholder="X (0-1199)" min="0" max="1199">
+  <input type="number" id="gotoY" placeholder="Y (0-1199)" min="0" max="1199">
+  <button type="button" onclick="goToCoord()">Aller à X:Y</button>
+  <button type="button" onclick="goCenter()">Centrer 597:597</button>
+  <button type="button" onclick="resetView()">Réinitialiser</button>
+</div>
+
+<div class="hint">
+Molette = zoom • Cliquer-glisser = déplacement
+</div>
+
+<div class="mapWrapper">
+  <canvas id="map"></canvas>
+</div>
+
+<footer>
+  <div>© Kingdom 340</div>
+  <div class="muted">Données : data/map.csv</div>
+</footer>
+
+</div>
+
+<script>
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+
+function resizeCanvas(){
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 700;
+}
+resizeCanvas();
+window.addEventListener("resize", () => { resizeCanvas(); draw(); });
+
+const MAP_SIZE = 1200;
+
+// vue (zoom + déplacement)
+let scale = canvas.width / MAP_SIZE;   // zoom initial
+let offsetX = 0;
+let offsetY = 0;
+
+// données
+let players = [];
+
+function cleanNumber(value){
+  return parseInt(
+    (value ?? '').toString()
+      .replace(/\u202f/g,' ')
+      .replace(/\u00a0/g,' ')
+      .replace(/\s/g,'')
+      .replace(/,/g,'')
+      .replace(/\./g,'')
+  ) || 0;
+}
+
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',').map(x => x.trim());
+  return lines.slice(1)
+    .filter(l => l.trim().length > 0)
+    .map(line => {
+      const cols = line.split(',');
+      const obj = {};
+      headers.forEach((h,i) => obj[h] = (cols[i] ?? '').trim());
+      return obj;
+    });
+}
+
+async function loadData(){
+  try{
+    const res = await fetch('data/map.csv', { cache:'no-store' });
+    const text = await res.text();
+    players = parseCSV(text).map(p => ({
+      Pseudo: p.Pseudo,
+      X: cleanNumber(p.X),
+      Y: cleanNumber(p.Y),
+      Alliance: p.Alliance || ""
+    }));
+  }catch(e){
+    players = [];
+  }
+  draw();
+}
+
+function drawGrid(){
+  ctx.strokeStyle = "#e6e8ef";
+  ctx.lineWidth = 1;
+
+  // lignes tous les 100
+  for(let i=0; i<=MAP_SIZE; i+=100){
+    ctx.beginPath();
+    ctx.moveTo(i*scale+offsetX, offsetY);
+    ctx.lineTo(i*scale+offsetX, MAP_SIZE*scale+offsetY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(offsetX, i*scale+offsetY);
+    ctx.lineTo(MAP_SIZE*scale+offsetX, i*scale+offsetY);
+    ctx.stroke();
+  }
+}
+
+function drawAxesLabels(){
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "12px ui-sans-serif, system-ui";
+  for(let i=0; i<=MAP_SIZE; i+=200){
+    ctx.fillText(i, i*scale+offsetX+4, offsetY+14);
+    ctx.fillText(i, offsetX+4, i*scale+offsetY-4);
+  }
+}
+
+function drawCenter(){
+  const cx = 597*scale+offsetX;
+  const cy = 597*scale+offsetY;
+
+  ctx.fillStyle = "#ef4444";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = "#ef4444";
+  ctx.font = "12px ui-sans-serif, system-ui";
+  ctx.fillText("Château 597:597", cx+10, cy-10);
+}
+
+function colorForAlliance(a){
+  // palette simple (tu pourras affiner)
+  const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
+  let hash = 0;
+  for(let i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
+  return colors[hash % colors.length];
+}
+
+function drawPlayers(){
+  players.forEach(p=>{
+    const x = p.X*scale+offsetX;
+    const y = p.Y*scale+offsetY;
+
+    ctx.fillStyle = p.Alliance ? colorForAlliance(p.Alliance) : "#1f3a5f";
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  drawAxesLabels();
+  drawCenter();
+  drawPlayers();
+}
+
+function goToCoord(){
+  const x = parseInt(document.getElementById("gotoX").value);
+  const y = parseInt(document.getElementById("gotoY").value);
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+  offsetX = canvas.width/2 - x*scale;
+  offsetY = canvas.height/2 - y*scale;
+  draw();
+}
+function goCenter(){
+  offsetX = canvas.width/2 - 597*scale;
+  offsetY = canvas.height/2 - 597*scale;
+  draw();
+}
+function resetView(){
+  scale = canvas.width / MAP_SIZE;
+  offsetX = 0;
+  offsetY = 0;
+  draw();
+}
+
+// zoom molette (autour de la souris)
+canvas.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const zoom = e.deltaY < 0 ? 1.12 : 0.88;
+
+  const mx = e.offsetX;
+  const my = e.offsetY;
+
+  const worldX = (mx - offsetX) / scale;
+  const worldY = (my - offsetY) / scale;
+
+  scale *= zoom;
+
+  offsetX = mx - worldX * scale;
+  offsetY = my - worldY * scale;
+
+  draw();
+},{passive:false});
+
+// déplacement drag
+let dragging=false;
+let lastX=0,lastY=0;
+
+canvas.addEventListener("mousedown", e=>{
+  dragging=true;
+  lastX=e.clientX;
+  lastY=e.clientY;
+  canvas.style.cursor="grabbing";
+});
+window.addEventListener("mouseup", ()=>{
+  dragging=false;
+  canvas.style.cursor="grab";
+});
+window.addEventListener("mousemove", e=>{
+  if(!dragging) return;
+  offsetX += (e.clientX - lastX);
+  offsetY += (e.clientY - lastY);
+  lastX=e.clientX;
+  lastY=e.clientY;
+  draw();
+});
+
+loadData();
+</script>
 </body>
 </html>
