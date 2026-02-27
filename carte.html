@@ -15,7 +15,7 @@
   }
   #map{
     width:100%;
-    height:700px;
+    height:720px;
     display:block;
     cursor:grab;
   }
@@ -48,6 +48,20 @@
     color:var(--muted);
     font-size:13px;
   }
+  .tooltip{
+    position:fixed;
+    pointer-events:none;
+    background:rgba(17,24,39,.92);
+    color:#fff;
+    padding:8px 10px;
+    border-radius:10px;
+    font-size:12px;
+    line-height:1.35;
+    transform: translate(12px, 12px);
+    display:none;
+    max-width:260px;
+    z-index:9999;
+  }
 </style>
 </head>
 <body>
@@ -56,7 +70,7 @@
 <nav class="navbar">
   <div class="brand">
     <div class="title">Kingdom 340</div>
-    <div class="subtitle">Carte (cases + sens du jeu)</div>
+    <div class="subtitle">Carte (projection losange calée)</div>
   </div>
   <div class="navlinks">
     <a href="index.html">Accueil</a>
@@ -69,14 +83,14 @@
 
 <h1 class="pageTitle">Carte 1200×1200</h1>
 <p class="pageIntro">
-0:0 est en bas • 597:597 = case château • Affichage tourné (comme le jeu).
+Référence : Château <strong>597:597</strong> • Tourelles : bas <strong>594:594</strong> • droite <strong>604:594</strong> • haut <strong>604:604</strong> • gauche <strong>594:604</strong>.
 </p>
 
 <div class="mapControls">
   <input type="number" id="gotoX" placeholder="X (0-1199)" min="0" max="1199">
   <input type="number" id="gotoY" placeholder="Y (0-1199)" min="0" max="1199">
   <button type="button" onclick="goToCoord()">Aller à X:Y</button>
-  <button type="button" onclick="goCenter()">Centrer 597:597</button>
+  <button type="button" onclick="goCenter()">Centrer château</button>
   <button type="button" onclick="resetView()">Réinitialiser</button>
 </div>
 
@@ -95,44 +109,134 @@ Molette = zoom (au pointeur) • Cliquer-glisser = déplacement • Survol = inf
 
 </div>
 
+<div class="tooltip" id="tip"></div>
+
 <script>
 const canvas = document.getElementById("map");
 const ctx = canvas.getContext("2d");
+const tip = document.getElementById("tip");
 
 function resizeCanvas(){
   canvas.width = canvas.offsetWidth;
-  canvas.height = 700;
+  canvas.height = 720;
 }
 resizeCanvas();
-window.addEventListener("resize", () => { resizeCanvas(); draw(); });
+window.addEventListener("resize", ()=>{ resizeCanvas(); draw(); });
 
+// ==============================
+// 1) PROJECTION "LOSANGE" (jeu)
+// ==============================
+//
+// On veut que (594:594) soit EN BAS de (597:597).
+// La projection qui satisfait ça est :
+//   sx = (x - y)
+//   sy = -(x + y)   (canvas : y augmente vers le bas)
+//
 const MAP_SIZE = 1200;
-const CASTLE_X = 597;
-const CASTLE_Y = 597;
 
-// Taille d'une case (en pixels) à scale=1
-const CELL = 8; // tu peux monter à 10/12 si tu veux plus "gros"
+// taille de base (zoom = 1)
+const CELL = 7.5;  // augmente si tu veux plus "zoomé" par défaut
 
-// Rotation visuelle (45° = losange)
-const ROT = Math.PI / 4;
+function project(x, y){
+  const sx = (x - y) * CELL;
+  const sy = (-(x + y)) * CELL;
+  return { sx, sy };
+}
 
-// Zoom + déplacement
+// ==============================
+// 2) RÉFÉRENCES CHÂTEAU/TOURELLES
+// ==============================
+const CASTLE = { x:597, y:597 };
+const T_BOTTOM = { x:594, y:594 };
+const T_RIGHT  = { x:604, y:594 };
+const T_TOP    = { x:604, y:604 };
+const T_LEFT   = { x:594, y:604 };
+
+// ==============================
+// 3) PAN + ZOOM
+// ==============================
 let zoom = 1;
 let panX = 0;
 let panY = 0;
 const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 12;
+const MAX_ZOOM = 20;
 
-// Données
+function centerOnCoord(x, y){
+  const p = project(x,y);
+  panX = canvas.width/2 - p.sx * zoom;
+  panY = canvas.height/2 - p.sy * zoom;
+}
+
+function goCenter(){
+  centerOnCoord(CASTLE.x, CASTLE.y);
+  draw();
+}
+function resetView(){
+  zoom = 1;
+  centerOnCoord(CASTLE.x, CASTLE.y);
+  draw();
+}
+
+// init : centre château
+resetView();
+
+// zoom au pointeur
+canvas.addEventListener("wheel", (e)=>{
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const oldZoom = zoom;
+  const factor = e.deltaY < 0 ? 1.15 : 0.87;
+  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+  if(next === zoom) return;
+
+  // coord "monde projeté" sous la souris
+  const worldX = (mx - panX) / oldZoom;
+  const worldY = (my - panY) / oldZoom;
+
+  zoom = next;
+
+  // garder le point sous la souris fixe
+  panX = mx - worldX * zoom;
+  panY = my - worldY * zoom;
+
+  draw();
+},{passive:false});
+
+// drag
+let dragging=false, lastX=0, lastY=0;
+canvas.addEventListener("mousedown", (e)=>{
+  dragging=true; lastX=e.clientX; lastY=e.clientY;
+  canvas.style.cursor="grabbing";
+});
+window.addEventListener("mouseup", ()=>{
+  dragging=false;
+  canvas.style.cursor="grab";
+});
+window.addEventListener("mousemove", (e)=>{
+  if(!dragging) return;
+  panX += (e.clientX - lastX);
+  panY += (e.clientY - lastY);
+  lastX = e.clientX; lastY = e.clientY;
+  draw();
+});
+
+// goto coord
+function goToCoord(){
+  const x = parseInt(document.getElementById("gotoX").value);
+  const y = parseInt(document.getElementById("gotoY").value);
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+  centerOnCoord(x,y);
+  draw();
+}
+
+// ==============================
+// 4) CSV joueurs
+// ==============================
 let players = [];
 
-// Image château (posée sur la case 597:597)
-const castleImg = new Image();
-castleImg.src = "images/castle.png";
-let castleReady = false;
-castleImg.onload = ()=>{ castleReady = true; draw(); };
-
-// --- CSV ---
 function cleanNumber(value){
   return parseInt(
     (value ?? '').toString()
@@ -170,7 +274,6 @@ async function loadData(){
 }
 loadData();
 
-// --- Couleur alliance ---
 function colorForAlliance(a){
   const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
   let hash = 0;
@@ -178,228 +281,257 @@ function colorForAlliance(a){
   return colors[hash % colors.length];
 }
 
-// ===============================
-// Mapping coord -> écran (IMPORTANT)
-// ===============================
-// 0:0 est en bas => on inverse Y : Y_screen = (MAP_SIZE-1 - Y)
-function worldToCanvasXY(x, y){
-  const yy = (MAP_SIZE - 1) - y; // inversion Y
-  return { wx: x, wy: yy };
+// ==============================
+// 5) Image château calée sur TOURELLES
+//    (on mappe les 4 pointes du PNG vers les 4 coords tourelles)
+// ==============================
+const castleImg = new Image();
+castleImg.src = "images/castle.png";
+let castleReady = false;
+
+// points source (dans l'image) : left/right/top/bottom du contour opaque
+let srcL=null, srcR=null, srcT=null, srcB=null;
+
+function detectDiamondPoints(img){
+  const oc = document.createElement("canvas");
+  oc.width = img.naturalWidth;
+  oc.height = img.naturalHeight;
+  const octx = oc.getContext("2d");
+  octx.drawImage(img, 0, 0);
+  const data = octx.getImageData(0,0,oc.width,oc.height).data;
+
+  let minX=oc.width, maxX=0, minY=oc.height, maxY=0;
+  // scan alpha
+  for(let y=0;y<oc.height;y++){
+    for(let x=0;x<oc.width;x++){
+      const a = data[(y*oc.width + x)*4 + 3];
+      if(a > 10){
+        if(x < minX) minX = x;
+        if(x > maxX) maxX = x;
+        if(y < minY) minY = y;
+        if(y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // moyenne des x à minY/maxY et moyenne des y à minX/maxX (plus stable)
+  let topX=0, topN=0, botX=0, botN=0, leftY=0, leftN=0, rightY=0, rightN=0;
+
+  for(let x=0;x<oc.width;x++){
+    const aTop = data[(minY*oc.width + x)*4 + 3];
+    if(aTop > 10){ topX += x; topN++; }
+    const aBot = data[(maxY*oc.width + x)*4 + 3];
+    if(aBot > 10){ botX += x; botN++; }
+  }
+  for(let y=0;y<oc.height;y++){
+    const aL = data[(y*oc.width + minX)*4 + 3];
+    if(aL > 10){ leftY += y; leftN++; }
+    const aR = data[(y*oc.width + maxX)*4 + 3];
+    if(aR > 10){ rightY += y; rightN++; }
+  }
+
+  const T = { x: (topN? topX/topN : oc.width/2), y: minY };
+  const B = { x: (botN? botX/botN : oc.width/2), y: maxY };
+  const L = { x: minX, y: (leftN? leftY/leftN : oc.height/2) };
+  const R = { x: maxX, y: (rightN? rightY/rightN : oc.height/2) };
+
+  return { L,R,T,B };
 }
 
-// Puis conversion "case" -> pixels (avant rotation)
-function worldToPixels(x, y){
-  const w = worldToCanvasXY(x, y);
-  return { px: w.wx * CELL, py: w.wy * CELL };
+// calc affine transform A = D * inv(S)
+function invert2x2(a,b,c,d){
+  const det = a*d - b*c;
+  if(Math.abs(det) < 1e-9) return null;
+  return { a: d/det, b: -b/det, c: -c/det, d: a/det };
 }
 
-// ===============================
-// Dessin avec rotation + pan + zoom
-// ===============================
-function beginView(){
+function drawCastleCalibrated(){
+  if(!castleReady || !srcL) return;
+
+  // Dest : positions projetées des 4 tourelles (attention : "diamond vertices" du jeu)
+  // Dans le visuel, les tourelles sont les 4 pointes du losange.
+  const dB = project(T_BOTTOM.x, T_BOTTOM.y); // pointe "bas"
+  const dR = project(T_RIGHT.x,  T_RIGHT.y);  // pointe "droite"
+  const dT = project(T_TOP.x,    T_TOP.y);    // pointe "haut"
+  const dL = project(T_LEFT.x,   T_LEFT.y);   // pointe "gauche"
+
+  // On construit une base affine avec 3 points : L, R, B
+  // Source:
+  const sL = srcL, sR = srcR, sB = srcB;
+  // Dest:
+  const pL = { x: dL.sx, y: dL.sy };
+  const pR = { x: dR.sx, y: dR.sy };
+  const pB = { x: dB.sx, y: dB.sy };
+
+  // Matrices : S = [sR-sL, sB-sL], D = [pR-pL, pB-pL]
+  const s1x = (sR.x - sL.x), s1y = (sR.y - sL.y);
+  const s2x = (sB.x - sL.x), s2y = (sB.y - sL.y);
+
+  const d1x = (pR.x - pL.x), d1y = (pR.y - pL.y);
+  const d2x = (pB.x - pL.x), d2y = (pB.y - pL.y);
+
+  const invS = invert2x2(s1x, s2x, s1y, s2y);
+  if(!invS) return;
+
+  // A = D * invS
+  const A11 = d1x*invS.a + d2x*invS.c;
+  const A12 = d1x*invS.b + d2x*invS.d;
+  const A21 = d1y*invS.a + d2y*invS.c;
+  const A22 = d1y*invS.b + d2y*invS.d;
+
+  // t = pL - A*sL
+  const tX = pL.x - (A11*sL.x + A12*sL.y);
+  const tY = pL.y - (A21*sL.x + A22*sL.y);
+
+  // Dessin (dans l'espace "projeté", ensuite on applique pan/zoom)
   ctx.save();
-
-  // Centre écran
-  ctx.translate(canvas.width/2 + panX, canvas.height/2 + panY);
-
-  // zoom
+  // pan + zoom
+  ctx.translate(panX, panY);
   ctx.scale(zoom, zoom);
 
-  // rotation losange
-  ctx.rotate(ROT);
+  // setTransform remplace la matrice courante => on doit reconstruire avec pan/zoom
+  // On le fait via transform() après pan/zoom :
+  ctx.transform(A11, A21, A12, A22, tX, tY);
 
-  // On veut que le centre de la map (597:597) soit au centre
-  const c = worldToPixels(CASTLE_X, CASTLE_Y);
-  ctx.translate(-c.px, -c.py);
-}
+  ctx.drawImage(castleImg, 0, 0);
+  ctx.restore();
 
-function endView(){
+  // Debug léger : case château
+  const c = project(CASTLE.x, CASTLE.y);
+  const cx = panX + c.sx*zoom;
+  const cy = panY + c.sy*zoom;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(239,68,68,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.stroke();
   ctx.restore();
 }
 
-// Grille légère (pas toute la map)
+castleImg.onload = ()=>{
+  castleReady = true;
+  const pts = detectDiamondPoints(castleImg);
+  srcL = pts.L; srcR = pts.R; srcT = pts.T; srcB = pts.B;
+  draw();
+};
+
+// ==============================
+// 6) Rendu : grille + points + tooltips
+// ==============================
 function drawGrid(){
-  const step = 50; // en cases
-  ctx.strokeStyle = "rgba(31,58,95,0.06)";
-  ctx.lineWidth = 1 / zoom;
+  // grille légère autour du château
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoom, zoom);
 
-  // On dessine un carré autour du château (range)
-  const range = 300; // cases autour
-  const x0 = Math.max(0, CASTLE_X - range);
-  const x1 = Math.min(MAP_SIZE, CASTLE_X + range);
-  const y0 = Math.max(0, CASTLE_Y - range);
-  const y1 = Math.min(MAP_SIZE, CASTLE_Y + range);
+  ctx.strokeStyle = "rgba(31,58,95,0.07)";
+  ctx.lineWidth = 1/zoom;
 
-  // lignes verticales
-  for(let x = x0; x <= x1; x += step){
-    const a = worldToPixels(x, y0);
-    const b = worldToPixels(x, y1);
+  const range = 140;  // cases autour
+  const step = 10;
+
+  for(let dx=-range; dx<=range; dx+=step){
+    // ligne de y : on trace un segment en reliant plusieurs points
     ctx.beginPath();
-    ctx.moveTo(a.px, a.py);
-    ctx.lineTo(b.px, b.py);
+    for(let dy=-range; dy<=range; dy+=1){
+      const p = project(CASTLE.x + dx, CASTLE.y + dy);
+      if(dy === -range) ctx.moveTo(p.sx, p.sy);
+      else ctx.lineTo(p.sx, p.sy);
+    }
     ctx.stroke();
   }
 
-  // lignes horizontales
-  for(let y = y0; y <= y1; y += step){
-    const a = worldToPixels(x0, y);
-    const b = worldToPixels(x1, y);
+  for(let dy=-range; dy<=range; dy+=step){
     ctx.beginPath();
-    ctx.moveTo(a.px, a.py);
-    ctx.lineTo(b.px, b.py);
+    for(let dx=-range; dx<=range; dx+=1){
+      const p = project(CASTLE.x + dx, CASTLE.y + dy);
+      if(dx === -range) ctx.moveTo(p.sx, p.sy);
+      else ctx.lineTo(p.sx, p.sy);
+    }
     ctx.stroke();
   }
-}
 
-function drawCastle(){
-  const p = worldToPixels(CASTLE_X, CASTLE_Y);
-
-  // La "case" du château (repère)
-  ctx.strokeStyle = "rgba(239,68,68,0.35)";
-  ctx.lineWidth = 2 / zoom;
-  ctx.strokeRect(p.px, p.py, CELL, CELL);
-
-  if(!castleReady) return;
-
-  // On pose l'image dans la case (tu peux ajuster)
-  const size = 140; // px à scale=1 (image)
-  ctx.drawImage(castleImg, p.px - size/2 + CELL/2, p.py - size + CELL, size, size);
+  ctx.restore();
 }
 
 function drawPlayers(){
-  const r = 4 / zoom; // taille fixe à l'écran (ne grossit pas)
-  // Si tu veux que ça grossisse avec le zoom, remplace par: const r = 4;
-
+  const r = 4; // taille écran fixe
   for(const pl of players){
-    const p = worldToPixels(pl.X, pl.Y);
+    const p = project(pl.X, pl.Y);
+    const x = panX + p.sx*zoom;
+    const y = panY + p.sy*zoom;
 
     ctx.fillStyle = pl.Alliance ? colorForAlliance(pl.Alliance) : "#1f3a5f";
     ctx.beginPath();
-    ctx.arc(p.px + CELL/2, p.py + CELL/2, r, 0, Math.PI*2);
+    ctx.arc(x, y, r, 0, Math.PI*2);
     ctx.fill();
 
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
-    ctx.lineWidth = 1 / zoom;
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 }
 
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  beginView();
+
   drawGrid();
-  drawCastle();
+  drawCastleCalibrated();
   drawPlayers();
-  endView();
 }
 
-// ===============================
-// Contrôles
-// ===============================
-function goCenter(){
-  panX = 0; panY = 0;
-  draw();
-}
-function resetView(){
-  zoom = 1;
-  panX = 0; panY = 0;
-  draw();
-}
-function goToCoord(){
-  const x = parseInt(document.getElementById("gotoX").value);
-  const y = parseInt(document.getElementById("gotoY").value);
-  if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+// ==============================
+// 7) Survol info (points)
+// ==============================
+let hover = null;
 
-  // On calcule où est ce point à l'écran actuellement, puis on ajuste pan pour le centrer
-  const pt = getScreenPositionOfWorld(x, y);
-  const cx = canvas.width/2;
-  const cy = canvas.height/2;
-  panX += (cx - pt.sx);
-  panY += (cy - pt.sy);
-  draw();
+function findHover(mx, my){
+  let best = null;
+  let bestD = 999999;
+  const hit = 10; // px
+
+  for(const pl of players){
+    const p = project(pl.X, pl.Y);
+    const x = panX + p.sx*zoom;
+    const y = panY + p.sy*zoom;
+    const d = Math.hypot(mx-x, my-y);
+    if(d < hit && d < bestD){
+      bestD = d;
+      best = { pl, x, y };
+    }
+  }
+  return best;
 }
 
-// Aide: calcule la position écran d'une coordonnée (sans dessiner)
-function getScreenPositionOfWorld(x, y){
-  // On refait les mêmes transforms à l'envers (sans canvas state)
-  // Étapes: centre écran + pan, zoom, rotation, translation centre (château)
-  const c = worldToPixels(CASTLE_X, CASTLE_Y);
-  const p = worldToPixels(x, y);
-
-  // Position relative à l'origine "centrée sur château" en pixels monde
-  let rx = p.px - c.px;
-  let ry = p.py - c.py;
-
-  // Rotation 45°
-  const cos = Math.cos(ROT);
-  const sin = Math.sin(ROT);
-  const rrx = rx*cos - ry*sin;
-  const rry = rx*sin + ry*cos;
-
-  // Zoom
-  const zrx = rrx * zoom;
-  const zry = rry * zoom;
-
-  // Centre + pan
-  return {
-    sx: canvas.width/2 + panX + zrx,
-    sy: canvas.height/2 + panY + zry
-  };
-}
-
-// Zoom au pointeur
-canvas.addEventListener("wheel", (e)=>{
-  e.preventDefault();
-
-  const oldZoom = zoom;
-  const factor = e.deltaY < 0 ? 1.15 : 0.85;
-  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
-  if(next === zoom) return;
-
-  // Position souris
+canvas.addEventListener("mousemove", (e)=>{
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
 
-  // On veut garder le point sous la souris fixe => ajuster pan
-  // On calcule le vecteur du centre vers la souris
-  const vx = mx - (canvas.width/2 + panX);
-  const vy = my - (canvas.height/2 + panY);
-
-  // Après zoom, ce vecteur change proportionnellement
-  const ratio = next / oldZoom;
-
-  panX -= vx*(ratio - 1);
-  panY -= vy*(ratio - 1);
-
-  zoom = next;
-  draw();
-},{passive:false});
-
-// Drag
-let dragging=false;
-let lastX=0,lastY=0;
-
-canvas.addEventListener("mousedown", e=>{
-  dragging=true;
-  lastX=e.clientX;
-  lastY=e.clientY;
-  canvas.style.cursor="grabbing";
-});
-window.addEventListener("mouseup", ()=>{
-  dragging=false;
-  canvas.style.cursor="grab";
-});
-window.addEventListener("mousemove", e=>{
-  if(!dragging) return;
-  panX += (e.clientX - lastX);
-  panY += (e.clientY - lastY);
-  lastX = e.clientX;
-  lastY = e.clientY;
-  draw();
+  const h = findHover(mx, my);
+  if(h){
+    hover = h;
+    tip.style.display = "block";
+    tip.style.left = (e.clientX + 12) + "px";
+    tip.style.top  = (e.clientY + 12) + "px";
+    tip.innerHTML = `<strong>${escapeHtml(h.pl.Pseudo)}</strong><br>
+      ${h.pl.Alliance ? `Alliance : ${escapeHtml(h.pl.Alliance)}<br>` : ``}
+      Coord : <strong>${h.pl.X}:${h.pl.Y}</strong>`;
+  }else{
+    hover = null;
+    tip.style.display = "none";
+  }
 });
 
-// Init
+function escapeHtml(s){
+  return (s||"").replace(/[&<>"']/g, (m)=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}
+
+// init
 draw();
 </script>
 </body>
