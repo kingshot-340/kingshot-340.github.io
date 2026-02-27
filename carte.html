@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Carte • Kingdom 340</title>
-<link rel="stylesheet" href="css/styles.css">
-
+<link rel="stylesheet" href="css/styles.css" />
 <style>
   .mapWrapper{
     margin-top:20px;
@@ -51,14 +50,13 @@
   }
 </style>
 </head>
-
 <body>
 <div class="container">
 
 <nav class="navbar">
   <div class="brand">
     <div class="title">Kingdom 340</div>
-    <div class="subtitle">Carte stratégique (isométrique)</div>
+    <div class="subtitle">Carte (cases + sens du jeu)</div>
   </div>
   <div class="navlinks">
     <a href="index.html">Accueil</a>
@@ -71,7 +69,7 @@
 
 <h1 class="pageTitle">Carte 1200×1200</h1>
 <p class="pageIntro">
-Centre château : <strong>597:597</strong> (projection <strong>losange</strong> comme dans le jeu).
+0:0 est en bas • 597:597 = case château • Affichage tourné (comme le jeu).
 </p>
 
 <div class="mapControls">
@@ -98,372 +96,311 @@ Molette = zoom (au pointeur) • Cliquer-glisser = déplacement • Survol = inf
 </div>
 
 <script>
-  const canvas = document.getElementById("map");
-  const ctx = canvas.getContext("2d");
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
 
-  function resizeCanvas(){
-    canvas.width = canvas.offsetWidth;
-    canvas.height = 700;
-  }
-  resizeCanvas();
-  window.addEventListener("resize", () => { resizeCanvas(); resetView(); });
+function resizeCanvas(){
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 700;
+}
+resizeCanvas();
+window.addEventListener("resize", () => { resizeCanvas(); draw(); });
 
-  // -------------------------
-  // CONFIG (à ajuster si besoin)
-  // -------------------------
-  const MAP_SIZE = 1200;
-  const CENTER_X = 597;
-  const CENTER_Y = 597;
+const MAP_SIZE = 1200;
+const CASTLE_X = 597;
+const CASTLE_Y = 597;
 
-  // Taille “tuile” à l’écran (en pixels) à l’échelle 1
-  // Si tu trouves que ça ne colle pas au rendu, on ajuste ces 2 valeurs.
-  const TILE_W_BASE = 34;   // largeur d’une tuile (losange)
-  const TILE_H_BASE = 17;   // hauteur d’une tuile (souvent ~ moitié)
+// Taille d'une case (en pixels) à scale=1
+const CELL = 8; // tu peux monter à 10/12 si tu veux plus "gros"
 
-  // Image du château (ton fichier actuel)
-  const CASTLE_SRC = "images/castle.png";
+// Rotation visuelle (45° = losange)
+const ROT = Math.PI / 4;
 
-  // Taille du château à l’échelle 1 (en pixels) + ancrage (offset)
-  // Le plus important : l’ancrage = point de contact au sol (la “base” du château).
-  // On ancre l’image au “bas-centre” par défaut.
-  const CASTLE_W_BASE = 260;
-  const CASTLE_H_BASE = 260;
+// Zoom + déplacement
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 12;
 
-  // Ajustement fin de l’ancrage château (si 593:594 n’est pas exactement où tu veux)
-  // Petite règle : modifie par pas de 2 ou 4.
-  const CASTLE_ANCHOR_ADJUST_X = 0;   // + vers la droite
-  const CASTLE_ANCHOR_ADJUST_Y = 10;  // + vers le bas
+// Données
+let players = [];
 
-  // Points joueurs
-  const DOT_R_BASE = 4; // rayon à l’échelle 1
+// Image château (posée sur la case 597:597)
+const castleImg = new Image();
+castleImg.src = "images/castle.png";
+let castleReady = false;
+castleImg.onload = ()=>{ castleReady = true; draw(); };
 
-  // -------------------------
-  // VIEW (zoom + pan)
-  // -------------------------
-  let scale = 1;             // scale isométrique (multiplie TILE_W/H et tailles)
-  let offsetX = 0;           // décalage écran (pixels)
-  let offsetY = 0;
-
-  const MIN_SCALE = 0.35;
-  const MAX_SCALE = 6;
-
-  // -------------------------
-  // DATA
-  // -------------------------
-  let players = [];
-
-  function cleanNumber(value){
-    return parseInt(
-      (value ?? '').toString()
-        .replace(/\u202f/g,' ')
-        .replace(/\u00a0/g,' ')
-        .replace(/\s/g,'')
-        .replace(/,/g,'')
-        .replace(/\./g,'')
-    ) || 0;
-  }
-
-  function parseCSV(text){
-    const lines = text.trim().split(/\r?\n/);
-    const headers = lines[0].split(',').map(x => x.trim());
-    return lines.slice(1)
-      .filter(l => l.trim().length > 0)
-      .map(line => {
-        const cols = line.split(',');
-        const obj = {};
-        headers.forEach((h,i) => obj[h] = (cols[i] ?? '').trim());
-        return obj;
-      });
-  }
-
-  async function loadData(){
-    try{
-      const res = await fetch('data/map.csv', { cache:'no-store' });
-      const text = await res.text();
-      players = parseCSV(text).map(p => ({
-        Pseudo: p.Pseudo || "",
-        X: cleanNumber(p.X),
-        Y: cleanNumber(p.Y),
-        Alliance: p.Alliance || ""
-      }));
-    }catch(e){
-      players = [];
-    }
-    draw();
-  }
-
-  // -------------------------
-  // COLORS
-  // -------------------------
-  function colorForAlliance(a){
-    const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
-    let hash = 0;
-    for(let i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
-    return colors[hash % colors.length];
-  }
-
-  // -------------------------
-  // ISO TRANSFORMS
-  // -------------------------
-  function tileW(){ return TILE_W_BASE * scale; }
-  function tileH(){ return TILE_H_BASE * scale; }
-
-  // Convertit coord monde (X,Y) -> pixel écran (sx, sy)
-  function worldToScreen(x, y){
-    const dx = x - CENTER_X;
-    const dy = CENTER_Y - y; // <-- inversion de l'axe Y (très souvent le cas en map de jeu)
-
-    const sx = (canvas.width/2) + offsetX + (dx - dy) * (tileW()/2);
-    const sy = (canvas.height/2) + offsetY + (dx + dy) * (tileH()/2);
-
-    return { sx, sy };
-  }
-
-  // Convertit pixel écran -> coord approx monde (X,Y)
-  function screenToWorld(sx, sy){
-    // On retire centre écran + offsets
-    const rx = sx - (canvas.width/2) - offsetX;
-    const ry = sy - (canvas.height/2) - offsetY;
-
-    // Inversion du système :
-    // rx = (dx - dy) * (tileW/2)
-    // ry = (dx + dy) * (tileH/2)
-    const a = rx / (tileW()/2);
-    const b = ry / (tileH()/2);
-
-    const dx = (a + b) / 2;
-    const dy = (b - a) / 2;
-
-    return {
-      x: Math.round(CENTER_X + dx),
-      y: Math.round(CENTER_Y + dy)
-    };
-  }
-
-  // -------------------------
-  // CASTLE IMAGE
-  // -------------------------
-  const castleImg = new Image();
-  castleImg.src = CASTLE_SRC;
-  let castleReady = false;
-  castleImg.onload = () => { castleReady = true; draw(); };
-
-  function drawCastle(){
-    const { sx, sy } = worldToScreen(CENTER_X, CENTER_Y);
-
-    if(!castleReady) {
-      // fallback point
-      ctx.fillStyle = "#ef4444";
-      ctx.beginPath();
-      ctx.arc(sx, sy, 6*scale, 0, Math.PI*2);
-      ctx.fill();
-      return;
-    }
-
-    const w = CASTLE_W_BASE * scale;
-    const h = CASTLE_H_BASE * scale;
-
-    // Ancrage bas-centre (base du château)
-    const anchorX = sx + (CASTLE_ANCHOR_ADJUST_X * scale);
-    const anchorY = sy + (CASTLE_ANCHOR_ADJUST_Y * scale);
-
-    const drawX = anchorX - w/2;
-    const drawY = anchorY - h;
-
-    ctx.drawImage(castleImg, drawX, drawY, w, h);
-  }
-
-  // -------------------------
-  // GRID (optionnel mais utile)
-  // -------------------------
-  function drawIsoGrid(){
-    // On dessine une grille légère autour du centre, pas 1200x1200 (trop lourd)
-    const range = 60; // nombre de cases autour du centre à afficher
-    ctx.strokeStyle = "rgba(31,58,95,0.06)";
-    ctx.lineWidth = 1;
-
-    for(let i=-range;i<=range;i+=5){
-      // lignes “diag 1” : (x+i, y-range) -> (x+i, y+range)
-      let p1 = worldToScreen(CENTER_X + i, CENTER_Y - range);
-      let p2 = worldToScreen(CENTER_X + i, CENTER_Y + range);
-      ctx.beginPath();
-      ctx.moveTo(p1.sx, p1.sy);
-      ctx.lineTo(p2.sx, p2.sy);
-      ctx.stroke();
-
-      // lignes “diag 2” : (x-range, y+i) -> (x+range, y+i)
-      p1 = worldToScreen(CENTER_X - range, CENTER_Y + i);
-      p2 = worldToScreen(CENTER_X + range, CENTER_Y + i);
-      ctx.beginPath();
-      ctx.moveTo(p1.sx, p1.sy);
-      ctx.lineTo(p2.sx, p2.sy);
-      ctx.stroke();
-    }
-  }
-
-  // -------------------------
-  // PLAYERS
-  // -------------------------
-  function drawPlayers(){
-    const r = DOT_R_BASE * scale;
-
-    players.forEach(p=>{
-      const { sx, sy } = worldToScreen(p.X, p.Y);
-
-      ctx.fillStyle = p.Alliance ? colorForAlliance(p.Alliance) : "#1f3a5f";
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, 0, Math.PI*2);
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = Math.max(1, 1*scale);
-      ctx.stroke();
-    });
-  }
-
-  // -------------------------
-  // DRAW
-  // -------------------------
-  function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawIsoGrid();
-    drawCastle();
-    drawPlayers();
-  }
-
-  // -------------------------
-  // CONTROLS
-  // -------------------------
-  function goCenter(){
-    // Centre écran = centre monde
-    offsetX = 0;
-    offsetY = 0;
-    draw();
-  }
-
-  function resetView(){
-    scale = 1;
-    offsetX = 0;
-    offsetY = 0;
-    draw();
-  }
-
-  function goToCoord(){
-    const x = parseInt(document.getElementById("gotoX").value);
-    const y = parseInt(document.getElementById("gotoY").value);
-    if(!Number.isFinite(x) || !Number.isFinite(y)) return;
-
-    // On veut que (x,y) arrive au centre écran -> on ajuste offsetX/Y
-    const target = worldToScreen(x, y);
-    const cx = canvas.width/2;
-    const cy = canvas.height/2;
-
-    offsetX += (cx - target.sx);
-    offsetY += (cy - target.sy);
-
-    draw();
-  }
-
-  // Zoom molette AU POINTEUR
-  canvas.addEventListener("wheel", e=>{
-    e.preventDefault();
-
-    const oldScale = scale;
-    const factor = e.deltaY < 0 ? 1.15 : 0.85;
-    const nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
-    if(nextScale === scale) return;
-
-    // coord monde sous souris avant zoom
-    const mx = e.offsetX;
-    const my = e.offsetY;
-    const before = screenToWorld(mx, my);
-
-    scale = nextScale;
-
-    // coord écran de ce même monde après zoom
-    const after = worldToScreen(before.x, before.y);
-
-    // Ajuster offset pour que le pointeur reste sur le même monde
-    offsetX += (mx - after.sx);
-    offsetY += (my - after.sy);
-
-    draw();
-  }, { passive:false });
-
-  // Pan (drag)
-  let dragging=false;
-  let lastX=0,lastY=0;
-
-  canvas.addEventListener("mousedown", e=>{
-    dragging=true;
-    lastX=e.clientX;
-    lastY=e.clientY;
-    canvas.style.cursor="grabbing";
+// --- CSV ---
+function cleanNumber(value){
+  return parseInt(
+    (value ?? '').toString()
+      .replace(/\u202f/g,' ')
+      .replace(/\u00a0/g,' ')
+      .replace(/\s/g,'')
+      .replace(/,/g,'')
+      .replace(/\./g,'')
+  ) || 0;
+}
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',').map(x => x.trim());
+  return lines.slice(1).filter(l => l.trim().length > 0).map(line=>{
+    const cols = line.split(',');
+    const obj = {};
+    headers.forEach((h,i)=> obj[h] = (cols[i] ?? '').trim());
+    return obj;
   });
-  window.addEventListener("mouseup", ()=>{
-    dragging=false;
-    canvas.style.cursor="grab";
-  });
-  window.addEventListener("mousemove", e=>{
-    if(!dragging) return;
-    offsetX += (e.clientX - lastX);
-    offsetY += (e.clientY - lastY);
-    lastX = e.clientX;
-    lastY = e.clientY;
-    draw();
-  });
-
-  // Tooltip simple
-  const tip = document.createElement("div");
-  tip.style.position="fixed";
-  tip.style.pointerEvents="none";
-  tip.style.padding="8px 10px";
-  tip.style.border="1px solid rgba(0,0,0,0.08)";
-  tip.style.borderRadius="10px";
-  tip.style.background="rgba(255,255,255,0.95)";
-  tip.style.boxShadow="0 10px 30px rgba(17,24,39,.12)";
-  tip.style.font="12px ui-sans-serif, system-ui";
-  tip.style.color="#111827";
-  tip.style.display="none";
-  document.body.appendChild(tip);
-
-  canvas.addEventListener("mousemove", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    // Cherche un joueur proche en pixels
-    let found = null;
-    const hit = 10;
-
-    for(const p of players){
-      const s = worldToScreen(p.X, p.Y);
-      const dx = (s.sx - mx);
-      const dy = (s.sy - my);
-      if(dx*dx + dy*dy <= hit*hit){
-        found = p;
-        break;
-      }
-    }
-
-    const w = screenToWorld(mx, my);
-
-    tip.style.display = "block";
-    tip.style.left = (e.clientX + 12) + "px";
-    tip.style.top  = (e.clientY + 12) + "px";
-
-    if(found){
-      tip.innerHTML = `<strong>${found.Pseudo}</strong><br><span style="color:#6b7280">${found.Alliance || ""}</span> • ${found.X}:${found.Y}`;
-    }else{
-      tip.innerHTML = `<span style="color:#6b7280">Curseur :</span> ${w.x}:${w.y}`;
-    }
-  });
-
-  canvas.addEventListener("mouseleave", () => tip.style.display="none");
-
-  // Init
-  loadData();
+}
+async function loadData(){
+  try{
+    const res = await fetch("data/map.csv", { cache:"no-store" });
+    const text = await res.text();
+    players = parseCSV(text).map(p => ({
+      Pseudo: p.Pseudo || "",
+      X: cleanNumber(p.X),
+      Y: cleanNumber(p.Y),
+      Alliance: p.Alliance || ""
+    }));
+  }catch(e){
+    players = [];
+  }
   draw();
+}
+loadData();
+
+// --- Couleur alliance ---
+function colorForAlliance(a){
+  const colors = ["#1f3a5f","#3b82f6","#16a34a","#f97316","#a855f7","#ef4444","#0ea5e9","#64748b"];
+  let hash = 0;
+  for(let i=0;i<a.length;i++) hash = (hash*31 + a.charCodeAt(i)) >>> 0;
+  return colors[hash % colors.length];
+}
+
+// ===============================
+// Mapping coord -> écran (IMPORTANT)
+// ===============================
+// 0:0 est en bas => on inverse Y : Y_screen = (MAP_SIZE-1 - Y)
+function worldToCanvasXY(x, y){
+  const yy = (MAP_SIZE - 1) - y; // inversion Y
+  return { wx: x, wy: yy };
+}
+
+// Puis conversion "case" -> pixels (avant rotation)
+function worldToPixels(x, y){
+  const w = worldToCanvasXY(x, y);
+  return { px: w.wx * CELL, py: w.wy * CELL };
+}
+
+// ===============================
+// Dessin avec rotation + pan + zoom
+// ===============================
+function beginView(){
+  ctx.save();
+
+  // Centre écran
+  ctx.translate(canvas.width/2 + panX, canvas.height/2 + panY);
+
+  // zoom
+  ctx.scale(zoom, zoom);
+
+  // rotation losange
+  ctx.rotate(ROT);
+
+  // On veut que le centre de la map (597:597) soit au centre
+  const c = worldToPixels(CASTLE_X, CASTLE_Y);
+  ctx.translate(-c.px, -c.py);
+}
+
+function endView(){
+  ctx.restore();
+}
+
+// Grille légère (pas toute la map)
+function drawGrid(){
+  const step = 50; // en cases
+  ctx.strokeStyle = "rgba(31,58,95,0.06)";
+  ctx.lineWidth = 1 / zoom;
+
+  // On dessine un carré autour du château (range)
+  const range = 300; // cases autour
+  const x0 = Math.max(0, CASTLE_X - range);
+  const x1 = Math.min(MAP_SIZE, CASTLE_X + range);
+  const y0 = Math.max(0, CASTLE_Y - range);
+  const y1 = Math.min(MAP_SIZE, CASTLE_Y + range);
+
+  // lignes verticales
+  for(let x = x0; x <= x1; x += step){
+    const a = worldToPixels(x, y0);
+    const b = worldToPixels(x, y1);
+    ctx.beginPath();
+    ctx.moveTo(a.px, a.py);
+    ctx.lineTo(b.px, b.py);
+    ctx.stroke();
+  }
+
+  // lignes horizontales
+  for(let y = y0; y <= y1; y += step){
+    const a = worldToPixels(x0, y);
+    const b = worldToPixels(x1, y);
+    ctx.beginPath();
+    ctx.moveTo(a.px, a.py);
+    ctx.lineTo(b.px, b.py);
+    ctx.stroke();
+  }
+}
+
+function drawCastle(){
+  const p = worldToPixels(CASTLE_X, CASTLE_Y);
+
+  // La "case" du château (repère)
+  ctx.strokeStyle = "rgba(239,68,68,0.35)";
+  ctx.lineWidth = 2 / zoom;
+  ctx.strokeRect(p.px, p.py, CELL, CELL);
+
+  if(!castleReady) return;
+
+  // On pose l'image dans la case (tu peux ajuster)
+  const size = 140; // px à scale=1 (image)
+  ctx.drawImage(castleImg, p.px - size/2 + CELL/2, p.py - size + CELL, size, size);
+}
+
+function drawPlayers(){
+  const r = 4 / zoom; // taille fixe à l'écran (ne grossit pas)
+  // Si tu veux que ça grossisse avec le zoom, remplace par: const r = 4;
+
+  for(const pl of players){
+    const p = worldToPixels(pl.X, pl.Y);
+
+    ctx.fillStyle = pl.Alliance ? colorForAlliance(pl.Alliance) : "#1f3a5f";
+    ctx.beginPath();
+    ctx.arc(p.px + CELL/2, p.py + CELL/2, r, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 1 / zoom;
+    ctx.stroke();
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  beginView();
+  drawGrid();
+  drawCastle();
+  drawPlayers();
+  endView();
+}
+
+// ===============================
+// Contrôles
+// ===============================
+function goCenter(){
+  panX = 0; panY = 0;
+  draw();
+}
+function resetView(){
+  zoom = 1;
+  panX = 0; panY = 0;
+  draw();
+}
+function goToCoord(){
+  const x = parseInt(document.getElementById("gotoX").value);
+  const y = parseInt(document.getElementById("gotoY").value);
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+  // On calcule où est ce point à l'écran actuellement, puis on ajuste pan pour le centrer
+  const pt = getScreenPositionOfWorld(x, y);
+  const cx = canvas.width/2;
+  const cy = canvas.height/2;
+  panX += (cx - pt.sx);
+  panY += (cy - pt.sy);
+  draw();
+}
+
+// Aide: calcule la position écran d'une coordonnée (sans dessiner)
+function getScreenPositionOfWorld(x, y){
+  // On refait les mêmes transforms à l'envers (sans canvas state)
+  // Étapes: centre écran + pan, zoom, rotation, translation centre (château)
+  const c = worldToPixels(CASTLE_X, CASTLE_Y);
+  const p = worldToPixels(x, y);
+
+  // Position relative à l'origine "centrée sur château" en pixels monde
+  let rx = p.px - c.px;
+  let ry = p.py - c.py;
+
+  // Rotation 45°
+  const cos = Math.cos(ROT);
+  const sin = Math.sin(ROT);
+  const rrx = rx*cos - ry*sin;
+  const rry = rx*sin + ry*cos;
+
+  // Zoom
+  const zrx = rrx * zoom;
+  const zry = rry * zoom;
+
+  // Centre + pan
+  return {
+    sx: canvas.width/2 + panX + zrx,
+    sy: canvas.height/2 + panY + zry
+  };
+}
+
+// Zoom au pointeur
+canvas.addEventListener("wheel", (e)=>{
+  e.preventDefault();
+
+  const oldZoom = zoom;
+  const factor = e.deltaY < 0 ? 1.15 : 0.85;
+  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+  if(next === zoom) return;
+
+  // Position souris
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  // On veut garder le point sous la souris fixe => ajuster pan
+  // On calcule le vecteur du centre vers la souris
+  const vx = mx - (canvas.width/2 + panX);
+  const vy = my - (canvas.height/2 + panY);
+
+  // Après zoom, ce vecteur change proportionnellement
+  const ratio = next / oldZoom;
+
+  panX -= vx*(ratio - 1);
+  panY -= vy*(ratio - 1);
+
+  zoom = next;
+  draw();
+},{passive:false});
+
+// Drag
+let dragging=false;
+let lastX=0,lastY=0;
+
+canvas.addEventListener("mousedown", e=>{
+  dragging=true;
+  lastX=e.clientX;
+  lastY=e.clientY;
+  canvas.style.cursor="grabbing";
+});
+window.addEventListener("mouseup", ()=>{
+  dragging=false;
+  canvas.style.cursor="grab";
+});
+window.addEventListener("mousemove", e=>{
+  if(!dragging) return;
+  panX += (e.clientX - lastX);
+  panY += (e.clientY - lastY);
+  lastX = e.clientX;
+  lastY = e.clientY;
+  draw();
+});
+
+// Init
+draw();
 </script>
 </body>
 </html>
